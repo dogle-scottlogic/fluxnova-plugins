@@ -295,19 +295,19 @@ class AgentOrchestrationIntegrationTest {
 
     private static LlmResponse doneResponse() {
         return new LlmResponse("", List.of(),
-                List.of(ConversationEntry.assistant("", List.of())));
+                List.of(ConversationEntry.assistant("", List.of())), 0L, 0L);
     }
 
     private static LlmResponse toolCallResponse(String toolCallId, String toolId) {
         List<ToolCallRequest> toolCalls = List.of(new ToolCallRequest(toolCallId, toolId));
         return new LlmResponse(null, toolCalls,
-                List.of(ConversationEntry.assistant(null, toolCalls)));
+                List.of(ConversationEntry.assistant(null, toolCalls)), 0L, 0L);
     }
 
     private static LlmResponse parallelToolCallResponse(ToolCallRequest... requests) {
         List<ToolCallRequest> toolCalls = List.of(requests);
         return new LlmResponse(null, toolCalls,
-                List.of(ConversationEntry.assistant(null, toolCalls)));
+                List.of(ConversationEntry.assistant(null, toolCalls)), 0L, 0L);
     }
 
     // -----------------------------------------------------------------------

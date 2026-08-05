@@ -170,7 +170,7 @@ class AgentOrchestrationJobHandlerTest {
                         List<ConversationEntry> updatedHistory = List.of(ConversationEntry
                                         .assistant("I'll check task A", toolCalls));
                         LlmResponse response = new LlmResponse("I'll check task A", toolCalls,
-                                        updatedHistory);
+                                        updatedHistory, 0L, 0L);
                         when(llmService.call(eq(agentConfig), eq(toolCatalogue),
                                         eq(resolvedContext), anyList())).thenReturn(response);
                         when(toolInvocationService.invoke(eq(runtimeService), eq(SCOPE_EXECUTION_ID), eq(toolCatalogue),
@@ -199,7 +199,7 @@ class AgentOrchestrationJobHandlerTest {
                         List<ConversationEntry> updatedHistory = List
                                         .of(ConversationEntry.assistant("All done!", List.of()));
                         LlmResponse response =
-                                        new LlmResponse("All done!", List.of(), updatedHistory);
+                                        new LlmResponse("All done!", List.of(), updatedHistory, 0L, 0L);
                         when(llmService.call(eq(agentConfig), eq(toolCatalogue),
                                         eq(resolvedContext), anyList())).thenReturn(response);
 
@@ -242,7 +242,7 @@ class AgentOrchestrationJobHandlerTest {
                                         any(AgentContextSpec.class))).thenReturn(resolvedContext);
 
                         LlmResponse response = new LlmResponse("Done", List.of(),
-                                        List.of(ConversationEntry.assistant("Done", List.of())));
+                                        List.of(ConversationEntry.assistant("Done", List.of())), 0L, 0L);
                         when(llmService.call(eq(agentConfig), eq(toolCatalogue),
                                         eq(resolvedContext), anyList())).thenReturn(response);
 
@@ -331,7 +331,7 @@ class AgentOrchestrationJobHandlerTest {
                                         .thenReturn(existingHistory);
 
                         LlmResponse response = new LlmResponse("Done!", List.of(),
-                                        List.of(ConversationEntry.assistant("Done!", List.of())));
+                                        List.of(ConversationEntry.assistant("Done!", List.of())), 0L, 0L);
                         when(llmService.call(eq(agentConfig), eq(toolCatalogue),
                                         eq(resolvedContext), anyList())).thenReturn(response);
 
@@ -379,7 +379,7 @@ class AgentOrchestrationJobHandlerTest {
                                         List.of(new ToolCallRequest("tc1", "taskA"),
                                                         new ToolCallRequest("tc2", "unknownTask"));
                         LlmResponse response = new LlmResponse("Checking", toolCalls, List
-                                        .of(ConversationEntry.assistant("Checking", toolCalls)));
+                                        .of(ConversationEntry.assistant("Checking", toolCalls)), 0L, 0L);
                         when(llmService.call(eq(agentConfig), eq(toolCatalogue),
                                         eq(resolvedContext), anyList())).thenReturn(response);
                         when(toolInvocationService
