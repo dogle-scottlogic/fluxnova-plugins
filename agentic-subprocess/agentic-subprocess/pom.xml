@@ -44,5 +44,10 @@
             <artifactId>fluxnova-engine-plugins-ai-agent-orchestrator</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.finos.fluxnova.bpm</groupId>
+            <artifactId>fluxnova-engine-plugins-ai-agent-history</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 </project>
