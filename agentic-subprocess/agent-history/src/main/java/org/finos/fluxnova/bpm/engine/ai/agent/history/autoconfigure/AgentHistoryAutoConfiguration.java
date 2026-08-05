@@ -4,7 +4,6 @@ import org.finos.fluxnova.bpm.engine.ai.agent.history.handler.AgentHistoryEngine
 import org.finos.fluxnova.bpm.engine.ai.agent.history.handler.AgentHistoryEventHandler;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.query.AgentHistoryQuery;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.rest.AgentHistoryRestController;
-import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.autoconfigure.AgentOrchestratorAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +22,7 @@ import javax.sql.DataSource;
  *   <li>{@link AgentHistoryRestController} — REST endpoint.</li>
  * </ul>
  */
-@AutoConfiguration(after = AgentOrchestratorAutoConfiguration.class)
+@AutoConfiguration
 public class AgentHistoryAutoConfiguration {
 
     @Bean

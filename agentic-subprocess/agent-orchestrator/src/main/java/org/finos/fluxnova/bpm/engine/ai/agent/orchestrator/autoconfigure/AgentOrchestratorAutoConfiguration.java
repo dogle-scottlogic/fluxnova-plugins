@@ -44,8 +44,9 @@ public class AgentOrchestratorAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubprocessToolCompletionListener subprocessToolCompletionListener() {
-        return new SubprocessToolCompletionListener();
+    public SubprocessToolCompletionListener subprocessToolCompletionListener(
+            AgentStateManager stateManager) {
+        return new SubprocessToolCompletionListener(stateManager);
     }
 
     @Bean

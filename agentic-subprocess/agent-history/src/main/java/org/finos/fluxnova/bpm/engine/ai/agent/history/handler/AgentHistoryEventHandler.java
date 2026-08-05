@@ -1,9 +1,9 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.history.handler;
 
-import org.finos.fluxnova.bpm.engine.ai.agent.history.event.AgentLlmHistoryEvent;
-import org.finos.fluxnova.bpm.engine.ai.agent.history.event.AgentLoopHistoryEvent;
-import org.finos.fluxnova.bpm.engine.ai.agent.history.event.AgentSubprocessHistoryEvent;
-import org.finos.fluxnova.bpm.engine.ai.agent.history.event.AgentToolCallHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentLlmHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentLoopHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentSubprocessHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentToolCallHistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.handler.HistoryEventHandler;
 import org.slf4j.Logger;

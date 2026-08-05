@@ -1,12 +1,17 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine;
 
+import org.finos.fluxnova.bpm.engine.ProcessEngineServices;
+import org.finos.fluxnova.bpm.engine.RuntimeService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.job.AgentOrchestrationJobHandler;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.AgentOrchestrationConfig;
+import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManager;
 import org.finos.fluxnova.bpm.engine.impl.context.Context;
+import org.finos.fluxnova.bpm.engine.impl.history.HistoryEventProcessor;
 import org.finos.fluxnova.bpm.engine.impl.interceptor.CommandContext;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.JobManager;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.MessageEntity;
+import org.finos.fluxnova.bpm.engine.impl.util.ClockUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -38,19 +45,32 @@ class SubprocessToolCompletionListenerTest {
     @Mock
     private JobManager jobManager;
 
+    @Mock
+    private AgentStateManager stateManager;
+
+    @Mock
+    private RuntimeService runtimeService;
+
+    @Mock
+    private ProcessEngineServices processEngineServices;
+
     private SubprocessToolCompletionListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new SubprocessToolCompletionListener();
+        listener = new SubprocessToolCompletionListener(stateManager);
     }
 
     private void stubToolCallExecution() {
         when(execution.getVariable("_agentToolCallId")).thenReturn(TOOL_CALL_ID);
+        when(execution.getVariable("_agentToolCallError")).thenReturn(null);
         when(execution.getCurrentActivityId()).thenReturn(ACTIVITY_ID);
+        when(execution.getCurrentActivityName()).thenReturn(ACTIVITY_ID);
         when(execution.getParent()).thenReturn(parentExecution);
         when(parentExecution.isScope()).thenReturn(true);
         when(parentExecution.getId()).thenReturn(SCOPE_EXECUTION_ID);
+        when(parentExecution.getProcessEngineServices()).thenReturn(processEngineServices);
+        when(processEngineServices.getRuntimeService()).thenReturn(runtimeService);
     }
 
     @Nested
@@ -76,8 +96,11 @@ class SubprocessToolCompletionListenerTest {
             stubToolCallExecution();
             when(commandContext.getJobManager()).thenReturn(jobManager);
 
-            try (MockedStatic<Context> contextMock = mockStatic(Context.class)) {
+            try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+                 MockedStatic<HistoryEventProcessor> histMock = mockStatic(HistoryEventProcessor.class);
+                 MockedStatic<ClockUtil> clockMock = mockStatic(ClockUtil.class)) {
                 contextMock.when(Context::getCommandContext).thenReturn(commandContext);
+                clockMock.when(ClockUtil::getCurrentTime).thenReturn(new Date());
                 listener.notify(execution);
             }
 

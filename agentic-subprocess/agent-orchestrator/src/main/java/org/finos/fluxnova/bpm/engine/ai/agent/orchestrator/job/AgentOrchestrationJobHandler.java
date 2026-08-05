@@ -8,6 +8,10 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.model.ResolvedContext;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentLlmHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentLoopHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentSubprocessHistoryEvent;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentToolCallHistoryEvent;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
 import org.finos.fluxnova.bpm.engine.ai.agent.model.AgentConfig;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.AgentOrchestrationConfig;
@@ -21,6 +25,9 @@ import org.finos.fluxnova.bpm.engine.impl.jobexecutor.JobHandler;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.JobEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.MessageEntity;
+import org.finos.fluxnova.bpm.engine.impl.history.HistoryEventProcessor;
+import org.finos.fluxnova.bpm.engine.impl.util.ClockUtil;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentHistoryEventTypes;
 import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.LlmResponse;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
@@ -29,6 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -177,9 +185,23 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                     "Tool catalogue is empty for activity '{}' in process '{}', terminating execution '{}'",
                     execution.getActivityId(), execution.getProcessDefinitionId(),
                     scopeExecutionId);
+            fireSubprocessEnd(execution, agentConfig, null);
             AgentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
+
+        // Fire AGENT_SUBPROCESS_START on the very first turn (loop index not yet set)
+        boolean isFirstTurn = stateManager.getLoopIndex(runtimeService, scopeExecutionId) == 0;
+        if (isFirstTurn) {
+            Date startTime = ClockUtil.getCurrentTime();
+            stateManager.recordStartTime(runtimeService, scopeExecutionId, startTime);
+            fireSubprocessStart(execution, agentConfig, startTime);
+        }
+
+        // Increment loop index and fire AGENT_LOOP_START
+        int loopIndex = stateManager.incrementAndGetLoopIndex(runtimeService, scopeExecutionId);
+        Date loopStartTime = ClockUtil.getCurrentTime();
+        fireLoopStart(execution, loopIndex, loopStartTime);
 
         // Fallback to empty spec if no context is declared — resolver will include all process
         // variables
@@ -189,20 +211,43 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                         execution.getActivityId(), List.of()));
         ResolvedContext context = contextResolver.resolve(runtimeService, scopeExecutionId, contextSpec);
 
+        // Fire AGENT_LLM_REQUEST
+        fireLlmRequest(execution, loopIndex, agentConfig.model(), history.size());
 
         LlmResponse response =
                 llmService.call(agentConfig, catalogue, context, history);
         LOG.debug("LLM response for scope '{}': toolCalls={}", scopeExecutionId, response.toolCalls());
         stateManager.saveHistory(runtimeService, scopeExecutionId, response.updatedHistory());
+        stateManager.accumulateTokens(runtimeService, scopeExecutionId,
+                response.promptTokens(), response.completionTokens());
+
+        // Fire AGENT_LLM_RESPONSE
+        String responseType = response.toolCalls().isEmpty() ? "TEXT" : "TOOL_CALLS";
+        fireLlmResponse(execution, loopIndex, agentConfig.model(),
+                response.promptTokens(), response.completionTokens(),
+                responseType, response.toolCalls().size());
 
         if (response.toolCalls().isEmpty()) {
             LOG.debug("No tool calls returned, triggering termination for scope '{}'", scopeExecutionId);
+            fireLoopEnd(execution, loopIndex, ClockUtil.getCurrentTime());
+            fireSubprocessEnd(execution, agentConfig, response.assistantText());
             // Complete the process if tool call is empty
             AgentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
+
+        // Fire AGENT_TOOL_CALL_REQUESTED for each tool call
+        Date toolRequestTime = ClockUtil.getCurrentTime();
+        for (ToolCallRequest tc : response.toolCalls()) {
+            stateManager.recordToolRequestTime(runtimeService, scopeExecutionId, tc.toolCallId(),
+                    toolRequestTime);
+            fireToolCallRequested(execution, loopIndex, tc, toolRequestTime);
+        }
+
         LOG.debug("Dispatching scope '{}': toolCalls='{}'", scopeExecutionId, response.toolCalls());
         dispatch(runtimeService, scopeExecutionId, catalogue, response.toolCalls(), execution, commandContext);
+
+        fireLoopEnd(execution, loopIndex, ClockUtil.getCurrentTime());
     }
 
     @Override
@@ -254,5 +299,147 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
             updated.add(ConversationEntry.tool(result.toolCallId(), resultContent));
         }
         return updated;
+    }
+
+    // -----------------------------------------------------------------------
+    // History event helpers
+    // -----------------------------------------------------------------------
+
+    private void fireSubprocessStart(ExecutionEntity execution, AgentConfig agentConfig,
+            Date startTime) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentSubprocessHistoryEvent event = new AgentSubprocessHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_SUBPROCESS_START.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setProvider(agentConfig.provider());
+            event.setModel(agentConfig.model());
+            event.setGoal(agentConfig.systemPrompt());
+            event.setStartTime(startTime);
+            return event;
+        });
+    }
+
+    private void fireSubprocessEnd(ExecutionEntity execution, AgentConfig agentConfig,
+            String finalOutput) {
+        String scopeExecutionId = execution.getId();
+        RuntimeService runtimeService = execution.getProcessEngineServices().getRuntimeService();
+        Date startTime = stateManager.getStartTime(runtimeService, scopeExecutionId);
+        int iterationCount = stateManager.getLoopIndex(runtimeService, scopeExecutionId);
+        long totalPromptTokens = stateManager.getTotalPromptTokens(runtimeService, scopeExecutionId);
+        long totalCompletionTokens =
+                stateManager.getTotalCompletionTokens(runtimeService, scopeExecutionId);
+        Date endTime = ClockUtil.getCurrentTime();
+
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentSubprocessHistoryEvent event = new AgentSubprocessHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_SUBPROCESS_END.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setProvider(agentConfig.provider());
+            event.setModel(agentConfig.model());
+            event.setGoal(agentConfig.systemPrompt());
+            event.setStartTime(startTime);
+            event.setEndTime(endTime);
+            event.setFinalOutput(finalOutput);
+            event.setIterationCount(iterationCount);
+            event.setTotalPromptTokens(totalPromptTokens);
+            event.setTotalCompletionTokens(totalCompletionTokens);
+            return event;
+        });
+    }
+
+    private void fireLoopStart(ExecutionEntity execution, int loopIndex, Date startTime) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentLoopHistoryEvent event = new AgentLoopHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_LOOP_START.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setLoopIndex(loopIndex);
+            event.setStartTime(startTime);
+            return event;
+        });
+    }
+
+    private void fireLoopEnd(ExecutionEntity execution, int loopIndex, Date endTime) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentLoopHistoryEvent event = new AgentLoopHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_LOOP_END.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setLoopIndex(loopIndex);
+            event.setEndTime(endTime);
+            return event;
+        });
+    }
+
+    private void fireLlmRequest(ExecutionEntity execution, int loopIndex, String model,
+            int messageCount) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentLlmHistoryEvent event = new AgentLlmHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_LLM_REQUEST.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setLoopIndex(loopIndex);
+            event.setModel(model);
+            event.setMessageCount(messageCount);
+            event.setTimestamp(ClockUtil.getCurrentTime());
+            return event;
+        });
+    }
+
+    private void fireLlmResponse(ExecutionEntity execution, int loopIndex, String model,
+            long promptTokens, long completionTokens, String responseType, int toolCallCount) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentLlmHistoryEvent event = new AgentLlmHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_LLM_RESPONSE.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setLoopIndex(loopIndex);
+            event.setModel(model);
+            event.setPromptTokens(promptTokens);
+            event.setCompletionTokens(completionTokens);
+            event.setResponseType(responseType);
+            event.setToolCallCount(toolCallCount);
+            event.setTimestamp(ClockUtil.getCurrentTime());
+            return event;
+        });
+    }
+
+    private void fireToolCallRequested(ExecutionEntity execution, int loopIndex,
+            ToolCallRequest tc, Date requestedAt) {
+        HistoryEventProcessor.processHistoryEvent(producer -> {
+            AgentToolCallHistoryEvent event = new AgentToolCallHistoryEvent();
+            event.setEventType(AgentHistoryEventTypes.AGENT_TOOL_CALL_REQUESTED.getEventName());
+            event.setProcessInstanceId(execution.getProcessInstanceId());
+            event.setExecutionId(execution.getId());
+            event.setProcessDefinitionKey(execution.getProcessDefinitionId());
+            event.setSubprocessElementId(execution.getActivityId());
+            event.setSubprocessExecutionId(execution.getId());
+            event.setLoopIndex(loopIndex);
+            event.setToolCallId(tc.toolCallId());
+            event.setToolElementId(tc.toolId());
+            event.setRequestedAt(requestedAt);
+            event.setStatus("PENDING");
+            return event;
+        });
     }
 }
