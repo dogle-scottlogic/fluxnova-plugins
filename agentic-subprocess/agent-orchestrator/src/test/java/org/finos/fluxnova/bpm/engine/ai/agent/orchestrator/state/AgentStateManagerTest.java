@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -204,10 +205,139 @@ class AgentStateManagerTest {
                                         "_agentToolResultBuffer");
                 }
         }
+        
+        @Nested
+        class LoopIndexTracking {
+
+                @Test
+                void incrementAndGetLoopIndex_firstCallReturnsOne() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentLoopIndex"))
+                                        .thenReturn(null);
+
+                        int index = stateManager.incrementAndGetLoopIndex(runtimeService, EXECUTION_ID);
+
+                        assertEquals(1, index);
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentLoopIndex", 1);
+                }
+
+                @Test
+                void incrementAndGetLoopIndex_subsequentCallsIncrement() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentLoopIndex"))
+                                        .thenReturn(3);
+
+                        int index = stateManager.incrementAndGetLoopIndex(runtimeService, EXECUTION_ID);
+
+                        assertEquals(4, index);
+                }
+
+                @Test
+                void getLoopIndex_whenNotSet_returnsZero() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentLoopIndex"))
+                                        .thenReturn(null);
+
+                        assertEquals(0, stateManager.getLoopIndex(runtimeService, EXECUTION_ID));
+                }
+        }
+
+        @Nested
+        class TokenAccumulation {
+
+                @Test
+                void accumulateTokens_fromZero_storesValues() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentTotalPromptTokens"))
+                                        .thenReturn(null);
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentTotalCompletionTokens"))
+                                        .thenReturn(null);
+
+                        stateManager.accumulateTokens(runtimeService, EXECUTION_ID, 100L, 50L);
+
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentTotalPromptTokens", 100L);
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentTotalCompletionTokens", 50L);
+                }
+
+                @Test
+                void accumulateTokens_addsToExisting() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentTotalPromptTokens"))
+                                        .thenReturn(200L);
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentTotalCompletionTokens"))
+                                        .thenReturn(80L);
+
+                        stateManager.accumulateTokens(runtimeService, EXECUTION_ID, 50L, 20L);
+
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentTotalPromptTokens", 250L);
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentTotalCompletionTokens", 100L);
+                }
+
+                @Test
+                void getTotalPromptTokens_whenNotSet_returnsZero() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentTotalPromptTokens"))
+                                        .thenReturn(null);
+
+                        assertEquals(0L, stateManager.getTotalPromptTokens(runtimeService, EXECUTION_ID));
+                }
+        }
+
+        @Nested
+        class StartTimeTracking {
+
+                @Test
+                void recordAndRetrieveStartTime_roundTrips() {
+                        Date now = new Date(1000000L);
+                        stateManager.recordStartTime(runtimeService, EXECUTION_ID, now);
+
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentStartTimeMs", 1000000L);
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentStartTimeMs"))
+                                        .thenReturn(1000000L);
+
+                        Date loaded = stateManager.getStartTime(runtimeService, EXECUTION_ID);
+                        assertNotNull(loaded);
+                        assertEquals(1000000L, loaded.getTime());
+                }
+
+                @Test
+                void getStartTime_whenNotSet_returnsNull() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentStartTimeMs"))
+                                        .thenReturn(null);
+
+                        assertNull(stateManager.getStartTime(runtimeService, EXECUTION_ID));
+                }
+        }
+
+        @Nested
+        class ToolRequestTimeTracking {
+
+                @Test
+                void recordAndRetrieveToolRequestTime_roundTrips() {
+                        Date requestedAt = new Date(2000000L);
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolRequestTimes"))
+                                        .thenReturn(null);
+
+                        stateManager.recordToolRequestTime(runtimeService, EXECUTION_ID, "tc1", requestedAt);
+
+                        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+                        verify(runtimeService).setVariableLocal(eq(EXECUTION_ID),
+                                        eq("_agentToolRequestTimes"), captor.capture());
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolRequestTimes"))
+                                        .thenReturn(captor.getValue());
+
+                        Date loaded = stateManager.getToolRequestTime(runtimeService, EXECUTION_ID, "tc1");
+                        assertNotNull(loaded);
+                        assertEquals(2000000L, loaded.getTime());
+                }
+
+                @Test
+                void getToolRequestTime_whenNotRecorded_returnsNull() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolRequestTimes"))
+                                        .thenReturn(null);
+
+                        assertNull(stateManager.getToolRequestTime(runtimeService, EXECUTION_ID, "tc-unknown"));
+                }
+        }
 
         @Nested
         class ToolCallQueue {
-
                 @Test
                 void loadToolCallQueue_whenNoVariable_returnsEmptyList() {
                         when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolCallQueue"))

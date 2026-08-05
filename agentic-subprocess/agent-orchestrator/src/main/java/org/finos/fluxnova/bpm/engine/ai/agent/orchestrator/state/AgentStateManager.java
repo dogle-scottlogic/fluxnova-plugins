@@ -11,8 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -43,6 +46,11 @@ public class AgentStateManager {
     private static final String VAR_PENDING_TOOL_CALLS = "_agentPendingToolCalls";
     private static final String VAR_TOOL_RESULT_BUFFER = "_agentToolResultBuffer";
     private static final String VAR_TOOL_CALL_QUEUE = "_agentToolCallQueue";
+    private static final String VAR_LOOP_INDEX = "_agentLoopIndex";
+    private static final String VAR_TOTAL_PROMPT_TOKENS = "_agentTotalPromptTokens";
+    private static final String VAR_TOTAL_COMPLETION_TOKENS = "_agentTotalCompletionTokens";
+    private static final String VAR_START_TIME_MS = "_agentStartTimeMs";
+    private static final String VAR_TOOL_REQUEST_TIMES = "_agentToolRequestTimes";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<List<ConversationEntry>> HISTORY_TYPE =
@@ -55,6 +63,9 @@ public class AgentStateManager {
             };
     private static final TypeReference<List<ToolCallRequest>> QUEUE_TYPE = new TypeReference<>() {
     };
+    private static final TypeReference<Map<String, Long>> TOOL_REQUEST_TIMES_TYPE =
+            new TypeReference<>() {
+            };
 
     public AgentStateManager() {
     }
@@ -209,6 +220,143 @@ public class AgentStateManager {
      */
     public void saveToolCallQueue(RuntimeService runtimeService, String executionId, List<ToolCallRequest> queue) {
         runtimeService.setVariableLocal(executionId, VAR_TOOL_CALL_QUEUE, serialize(queue));
+    }
+
+    /**
+     * Increments the loop index counter for the given execution and returns the new value.
+     * The first call returns {@code 1}.
+     *
+     * @param runtimeService the runtime service used to read and write the execution's local variables
+     * @param executionId the scope execution id
+     * @return the new (post-increment) loop index
+     */
+    public int incrementAndGetLoopIndex(RuntimeService runtimeService, String executionId) {
+        Integer current = (Integer) runtimeService.getVariableLocal(executionId, VAR_LOOP_INDEX);
+        int next = (current == null ? 0 : current) + 1;
+        runtimeService.setVariableLocal(executionId, VAR_LOOP_INDEX, next);
+        return next;
+    }
+
+    /**
+     * Returns the current loop index for the given execution, or {@code 0} if not yet set.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variables
+     * @param executionId the scope execution id
+     * @return the current loop index
+     */
+    public int getLoopIndex(RuntimeService runtimeService, String executionId) {
+        Integer current = (Integer) runtimeService.getVariableLocal(executionId, VAR_LOOP_INDEX);
+        return current == null ? 0 : current;
+    }
+
+    /**
+     * Accumulates prompt and completion token counts from a single LLM response into the
+     * running totals stored on the scope execution.
+     *
+     * @param runtimeService    the runtime service used to read and write the execution's local variables
+     * @param executionId       the scope execution id
+     * @param promptTokens      prompt tokens used in this LLM call
+     * @param completionTokens  completion tokens used in this LLM call
+     */
+    public void accumulateTokens(RuntimeService runtimeService, String executionId,
+            long promptTokens, long completionTokens) {
+        Long existingPrompt =
+                (Long) runtimeService.getVariableLocal(executionId, VAR_TOTAL_PROMPT_TOKENS);
+        Long existingCompletion =
+                (Long) runtimeService.getVariableLocal(executionId, VAR_TOTAL_COMPLETION_TOKENS);
+        runtimeService.setVariableLocal(executionId, VAR_TOTAL_PROMPT_TOKENS,
+                (existingPrompt == null ? 0L : existingPrompt) + promptTokens);
+        runtimeService.setVariableLocal(executionId, VAR_TOTAL_COMPLETION_TOKENS,
+                (existingCompletion == null ? 0L : existingCompletion) + completionTokens);
+    }
+
+    /**
+     * Returns the cumulative prompt token count across all LLM calls for this execution.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variables
+     * @param executionId the scope execution id
+     * @return total prompt tokens, or {@code 0} if none have been accumulated
+     */
+    public long getTotalPromptTokens(RuntimeService runtimeService, String executionId) {
+        Long value = (Long) runtimeService.getVariableLocal(executionId, VAR_TOTAL_PROMPT_TOKENS);
+        return value == null ? 0L : value;
+    }
+
+    /**
+     * Returns the cumulative completion token count across all LLM calls for this execution.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variables
+     * @param executionId the scope execution id
+     * @return total completion tokens, or {@code 0} if none have been accumulated
+     */
+    public long getTotalCompletionTokens(RuntimeService runtimeService, String executionId) {
+        Long value =
+                (Long) runtimeService.getVariableLocal(executionId, VAR_TOTAL_COMPLETION_TOKENS);
+        return value == null ? 0L : value;
+    }
+
+    /**
+     * Records the wall-clock time at which the subprocess was entered.
+     *
+     * @param runtimeService the runtime service used to write the execution's local variable
+     * @param executionId the scope execution id
+     * @param startTime the start timestamp
+     */
+    public void recordStartTime(RuntimeService runtimeService, String executionId, Date startTime) {
+        runtimeService.setVariableLocal(executionId, VAR_START_TIME_MS, startTime.getTime());
+    }
+
+    /**
+     * Returns the recorded subprocess start time, or {@code null} if not set.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variable
+     * @param executionId the scope execution id
+     * @return the start time, or {@code null}
+     */
+    public Date getStartTime(RuntimeService runtimeService, String executionId) {
+        Long ms = (Long) runtimeService.getVariableLocal(executionId, VAR_START_TIME_MS);
+        return ms == null ? null : new Date(ms);
+    }
+
+    /**
+     * Records the wall-clock time at which a tool call was requested so that duration can be
+     * calculated when the tool completes.
+     *
+     * @param runtimeService the runtime service used to read and write the execution's local variable
+     * @param executionId the scope execution id
+     * @param toolCallId the tool call identifier assigned by the LLM
+     * @param requestedAt the time at which the tool was requested
+     */
+    public void recordToolRequestTime(RuntimeService runtimeService, String executionId,
+            String toolCallId, Date requestedAt) {
+        Map<String, Long> times = loadToolRequestTimes(runtimeService, executionId);
+        times.put(toolCallId, requestedAt.getTime());
+        runtimeService.setVariableLocal(executionId, VAR_TOOL_REQUEST_TIMES, serialize(times));
+    }
+
+    /**
+     * Returns the time at which the given tool was requested, or {@code null} if not recorded.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variable
+     * @param executionId the scope execution id
+     * @param toolCallId the tool call identifier
+     * @return the request time, or {@code null}
+     */
+    public Date getToolRequestTime(RuntimeService runtimeService, String executionId,
+            String toolCallId) {
+        Map<String, Long> times = loadToolRequestTimes(runtimeService, executionId);
+        Long ms = times.get(toolCallId);
+        return ms == null ? null : new Date(ms);
+    }
+
+    private Map<String, Long> loadToolRequestTimes(RuntimeService runtimeService,
+            String executionId) {
+        String json =
+                (String) runtimeService.getVariableLocal(executionId, VAR_TOOL_REQUEST_TIMES);
+        if (json == null) {
+            return new HashMap<>();
+        }
+        return new HashMap<>(deserialize(json, TOOL_REQUEST_TIMES_TYPE));
     }
 
     private Set<String> loadPendingToolCalls(RuntimeService runtimeService, String executionId) {
