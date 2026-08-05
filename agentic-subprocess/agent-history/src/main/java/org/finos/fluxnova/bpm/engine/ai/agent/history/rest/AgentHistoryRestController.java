@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,7 +33,7 @@ public class AgentHistoryRestController {
      */
     @GetMapping("/subprocess/{subprocessExecutionId}")
     public ResponseEntity<AgentSubprocessHistoryDto> getBySubprocessExecutionId(
-            @PathVariable String subprocessExecutionId) {
+            @PathVariable("subprocessExecutionId") String subprocessExecutionId) {
         Optional<AgentSubprocessRecord> record = query.findByExecutionId(subprocessExecutionId);
         if (record.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -50,8 +49,8 @@ public class AgentHistoryRestController {
      */
     @GetMapping("/process/{processInstanceId}/subprocess/{subprocessElementId}")
     public ResponseEntity<AgentSubprocessHistoryDto> getByProcessInstanceAndElement(
-            @PathVariable String processInstanceId,
-            @PathVariable String subprocessElementId) {
+            @PathVariable("processInstanceId") String processInstanceId,
+            @PathVariable("subprocessElementId") String subprocessElementId) {
         Optional<AgentSubprocessRecord> record =
                 query.findByProcessInstanceAndElement(processInstanceId, subprocessElementId);
         if (record.isEmpty()) {
@@ -62,12 +61,8 @@ public class AgentHistoryRestController {
         return ResponseEntity.ok(toDto(record.get(), steps));
     }
 
-    // -----------------------------------------------------------------------
-    // Mapping
-    // -----------------------------------------------------------------------
-
     private AgentSubprocessHistoryDto toDto(AgentSubprocessRecord record,
-            List<AgentStepRecord> steps) {
+                                            List<AgentStepRecord> steps) {
         AgentSubprocessHistoryDto dto = new AgentSubprocessHistoryDto();
         dto.setSubprocessExecutionId(record.getExecutionId());
         dto.setProcessInstanceId(record.getProcessInstanceId());
@@ -76,6 +71,7 @@ public class AgentHistoryRestController {
         dto.setProvider(record.getProvider());
         dto.setModel(record.getModel());
         dto.setGoal(record.getGoal());
+        dto.setInputVariables(record.getInputVariables());
         dto.setFinalOutput(record.getFinalOutput());
         dto.setIterations(record.getIterationCount());
         dto.setTotalPromptTokens(record.getTotalPromptTokens());
@@ -84,7 +80,7 @@ public class AgentHistoryRestController {
         dto.setEndTime(record.getEndTime());
 
         if (record.getStartTime() != null && record.getEndTime() != null) {
-            dto.setExecutionTime(record.getEndTime().getTime() - record.getStartTime().getTime());
+            dto.setExecutionTime(record.getEndTime().toEpochMilli() - record.getStartTime().toEpochMilli());
         }
 
         dto.setToolCalls(extractToolCalls(steps));
@@ -109,13 +105,18 @@ public class AgentHistoryRestController {
             dto.setStatus(step.getStatus());
             dto.setErrorMessage(step.getErrorMessage());
 
-            // Populate requestedAt from the matching :requested step
+            // Populate requestedAt and toolInput from the matching :requested step
             steps.stream()
                     .filter(s -> "agent-tool-call:requested".equals(s.getEventType())
                             && step.getToolCallId() != null
                             && step.getToolCallId().equals(s.getToolCallId()))
                     .findFirst()
-                    .ifPresent(requested -> dto.setRequestedAt(requested.getTimestamp()));
+                    .ifPresent(requested -> {
+                        dto.setRequestedAt(requested.getTimestamp());
+                        dto.setToolInput(requested.getToolInput());
+                    });
+
+            dto.setToolOutput(step.getToolOutput());
 
             toolCalls.add(dto);
         }
@@ -123,7 +124,7 @@ public class AgentHistoryRestController {
     }
 
     private List<AgentStepDto> toStepDtos(List<AgentStepRecord> steps,
-            AgentSubprocessRecord subprocess) {
+                                          AgentSubprocessRecord subprocess) {
         List<AgentStepDto> dtos = new ArrayList<>();
         for (AgentStepRecord step : steps) {
             AgentStepDto dto = new AgentStepDto();
@@ -131,17 +132,15 @@ public class AgentHistoryRestController {
             dto.setTimestamp(step.getTimestamp());
             dto.setLoopIndex(step.getLoopIndex());
 
-            if ("agent-subprocess:start".equals(step.getEventType())) {
-                dto.setElementId(subprocess.getElementId());
-                dto.setProvider(subprocess.getProvider());
-                dto.setModel(subprocess.getModel());
-            } else if ("agent-llm:request".equals(step.getEventType())
+            if ("agent-llm:request".equals(step.getEventType())
                     || "agent-llm:response".equals(step.getEventType())) {
                 dto.setModel(subprocess.getModel());
                 dto.setPromptTokens(step.getPromptTokens());
                 dto.setCompletionTokens(step.getCompletionTokens());
                 dto.setResponseType(step.getResponseType());
                 dto.setToolCallCount(step.getToolCallCount());
+                dto.setPromptMessages(step.getPromptMessages());
+                dto.setResponseContent(step.getResponseContent());
             } else if (step.getEventType() != null && step.getEventType().startsWith("agent-tool-call:")) {
                 dto.setToolCallId(step.getToolCallId());
                 dto.setToolName(step.getToolName());
@@ -149,6 +148,8 @@ public class AgentHistoryRestController {
                 dto.setDurationMs(step.getDurationMs());
                 dto.setStatus(step.getStatus());
                 dto.setErrorMessage(step.getErrorMessage());
+                dto.setToolInput(step.getToolInput());
+                dto.setToolOutput(step.getToolOutput());
             }
 
             dtos.add(dto);

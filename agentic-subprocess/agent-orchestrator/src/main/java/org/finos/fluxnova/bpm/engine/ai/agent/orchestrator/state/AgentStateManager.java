@@ -10,8 +10,8 @@ import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -302,8 +302,8 @@ public class AgentStateManager {
      * @param executionId the scope execution id
      * @param startTime the start timestamp
      */
-    public void recordStartTime(RuntimeService runtimeService, String executionId, Date startTime) {
-        runtimeService.setVariableLocal(executionId, VAR_START_TIME_MS, startTime.getTime());
+    public void recordStartTime(RuntimeService runtimeService, String executionId, Instant startTime) {
+        runtimeService.setVariableLocal(executionId, VAR_START_TIME_MS, startTime.toEpochMilli());
     }
 
     /**
@@ -313,9 +313,9 @@ public class AgentStateManager {
      * @param executionId the scope execution id
      * @return the start time, or {@code null}
      */
-    public Date getStartTime(RuntimeService runtimeService, String executionId) {
+    public Instant getStartTime(RuntimeService runtimeService, String executionId) {
         Long ms = (Long) runtimeService.getVariableLocal(executionId, VAR_START_TIME_MS);
-        return ms == null ? null : new Date(ms);
+        return ms == null ? null : Instant.ofEpochMilli(ms);
     }
 
     /**
@@ -328,9 +328,9 @@ public class AgentStateManager {
      * @param requestedAt the time at which the tool was requested
      */
     public void recordToolRequestTime(RuntimeService runtimeService, String executionId,
-            String toolCallId, Date requestedAt) {
+            String toolCallId, Instant requestedAt) {
         Map<String, Long> times = loadToolRequestTimes(runtimeService, executionId);
-        times.put(toolCallId, requestedAt.getTime());
+        times.put(toolCallId, requestedAt.toEpochMilli());
         runtimeService.setVariableLocal(executionId, VAR_TOOL_REQUEST_TIMES, serialize(times));
     }
 
@@ -342,11 +342,11 @@ public class AgentStateManager {
      * @param toolCallId the tool call identifier
      * @return the request time, or {@code null}
      */
-    public Date getToolRequestTime(RuntimeService runtimeService, String executionId,
+    public Instant getToolRequestTime(RuntimeService runtimeService, String executionId,
             String toolCallId) {
         Map<String, Long> times = loadToolRequestTimes(runtimeService, executionId);
         Long ms = times.get(toolCallId);
-        return ms == null ? null : new Date(ms);
+        return ms == null ? null : Instant.ofEpochMilli(ms);
     }
 
     private Map<String, Long> loadToolRequestTimes(RuntimeService runtimeService,

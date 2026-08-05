@@ -2,7 +2,7 @@ package org.finos.fluxnova.bpm.engine.shared.agent;
 
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * History event carrying the state of a single agent subprocess execution.
@@ -21,8 +21,10 @@ public class AgentSubprocessHistoryEvent extends HistoryEvent {
     private String provider;
     private String model;
     private String goal;
-    private Date startTime;
-    private Date endTime;
+    /** JSON-encoded snapshot of the resolved process variables at subprocess start. */
+    private String inputVariables;
+    private Instant startTime;
+    private Instant endTime;
     private String finalOutput;
     private int iterationCount;
     private long totalPromptTokens;
@@ -68,19 +70,27 @@ public class AgentSubprocessHistoryEvent extends HistoryEvent {
         this.goal = goal;
     }
 
-    public Date getStartTime() {
+    public String getInputVariables() {
+        return inputVariables;
+    }
+
+    public void setInputVariables(String inputVariables) {
+        this.inputVariables = inputVariables;
+    }
+
+    public Instant getStartTime() {
         return startTime;
     }
 
-    public void setStartTime(Date startTime) {
+    public void setStartTime(Instant startTime) {
         this.startTime = startTime;
     }
 
-    public Date getEndTime() {
+    public Instant getEndTime() {
         return endTime;
     }
 
-    public void setEndTime(Date endTime) {
+    public void setEndTime(Instant endTime) {
         this.endTime = endTime;
     }
 

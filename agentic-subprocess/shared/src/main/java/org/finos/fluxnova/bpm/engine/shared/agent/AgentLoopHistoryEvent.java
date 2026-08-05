@@ -2,7 +2,7 @@ package org.finos.fluxnova.bpm.engine.shared.agent;
 
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * History event for a single orchestration loop (LLM round-trip cycle).
@@ -16,8 +16,8 @@ public class AgentLoopHistoryEvent extends HistoryEvent {
     private String subprocessElementId;
     private String subprocessExecutionId;
     private int loopIndex;
-    private Date startTime;
-    private Date endTime;
+    private Instant startTime;
+    private Instant endTime;
 
     public String getSubprocessElementId() {
         return subprocessElementId;
@@ -43,19 +43,19 @@ public class AgentLoopHistoryEvent extends HistoryEvent {
         this.loopIndex = loopIndex;
     }
 
-    public Date getStartTime() {
+    public Instant getStartTime() {
         return startTime;
     }
 
-    public void setStartTime(Date startTime) {
+    public void setStartTime(Instant startTime) {
         this.startTime = startTime;
     }
 
-    public Date getEndTime() {
+    public Instant getEndTime() {
         return endTime;
     }
 
-    public void setEndTime(Date endTime) {
+    public void setEndTime(Instant endTime) {
         this.endTime = endTime;
     }
 }

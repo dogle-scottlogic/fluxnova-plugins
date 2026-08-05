@@ -13,7 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -282,7 +282,7 @@ class AgentStateManagerTest {
 
                 @Test
                 void recordAndRetrieveStartTime_roundTrips() {
-                        Date now = new Date(1000000L);
+                        Instant now = Instant.ofEpochMilli(1000000L);
                         stateManager.recordStartTime(runtimeService, EXECUTION_ID, now);
 
                         verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentStartTimeMs", 1000000L);
@@ -290,9 +290,9 @@ class AgentStateManagerTest {
                         when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentStartTimeMs"))
                                         .thenReturn(1000000L);
 
-                        Date loaded = stateManager.getStartTime(runtimeService, EXECUTION_ID);
+                        Instant loaded = stateManager.getStartTime(runtimeService, EXECUTION_ID);
                         assertNotNull(loaded);
-                        assertEquals(1000000L, loaded.getTime());
+                        assertEquals(1000000L, loaded.toEpochMilli());
                 }
 
                 @Test
@@ -309,7 +309,7 @@ class AgentStateManagerTest {
 
                 @Test
                 void recordAndRetrieveToolRequestTime_roundTrips() {
-                        Date requestedAt = new Date(2000000L);
+                        Instant requestedAt = Instant.ofEpochMilli(2000000L);
                         when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolRequestTimes"))
                                         .thenReturn(null);
 
@@ -322,9 +322,9 @@ class AgentStateManagerTest {
                         when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolRequestTimes"))
                                         .thenReturn(captor.getValue());
 
-                        Date loaded = stateManager.getToolRequestTime(runtimeService, EXECUTION_ID, "tc1");
+                        Instant loaded = stateManager.getToolRequestTime(runtimeService, EXECUTION_ID, "tc1");
                         assertNotNull(loaded);
-                        assertEquals(2000000L, loaded.getTime());
+                        assertEquals(2000000L, loaded.toEpochMilli());
                 }
 
                 @Test

@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,7 +27,7 @@ public class AgentHistoryQuery {
     public Optional<AgentSubprocessRecord> findByExecutionId(String subprocessExecutionId) {
         String sql = """
                 SELECT ID_, PROC_INST_ID_, PROC_DEF_KEY_, ELEMENT_ID_,
-                       PROVIDER_, MODEL_, GOAL_,
+                       PROVIDER_, MODEL_, GOAL_, INPUT_VARIABLES_,
                        START_TIME_, END_TIME_, FINAL_OUTPUT_,
                        ITERATION_COUNT_, TOTAL_PROMPT_TOKENS_, TOTAL_COMPLETION_TOKENS_
                 FROM ACT_HI_AGENT_SUBPROCESS
@@ -33,7 +35,7 @@ public class AgentHistoryQuery {
                 """;
         List<AgentSubprocessRecord> results =
                 jdbcTemplate.query(sql, SUBPROCESS_ROW_MAPPER, subprocessExecutionId);
-        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /**
@@ -44,7 +46,7 @@ public class AgentHistoryQuery {
             String subprocessElementId) {
         String sql = """
                 SELECT ID_, PROC_INST_ID_, PROC_DEF_KEY_, ELEMENT_ID_,
-                       PROVIDER_, MODEL_, GOAL_,
+                       PROVIDER_, MODEL_, GOAL_, INPUT_VARIABLES_,
                        START_TIME_, END_TIME_, FINAL_OUTPUT_,
                        ITERATION_COUNT_, TOTAL_PROMPT_TOKENS_, TOTAL_COMPLETION_TOKENS_
                 FROM ACT_HI_AGENT_SUBPROCESS
@@ -53,7 +55,7 @@ public class AgentHistoryQuery {
         List<AgentSubprocessRecord> results =
                 jdbcTemplate.query(sql, SUBPROCESS_ROW_MAPPER, processInstanceId,
                         subprocessElementId);
-        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /**
@@ -66,7 +68,9 @@ public class AgentHistoryQuery {
                        LOOP_INDEX_, TOOL_CALL_ID_, TOOL_NAME_, TOOL_ELEMENT_ID_,
                        PROMPT_TOKENS_, COMPLETION_TOKENS_,
                        RESPONSE_TYPE_, TOOL_CALL_COUNT_,
-                       DURATION_MS_, STATUS_, ERROR_MESSAGE_
+                       PROMPT_MESSAGES_, RESPONSE_CONTENT_,
+                       DURATION_MS_, STATUS_, ERROR_MESSAGE_,
+                       TOOL_INPUT_, TOOL_OUTPUT_
                 FROM ACT_HI_AGENT_STEP
                 WHERE SUBPROCESS_EXECUTION_ID_ = ?
                 ORDER BY SEQUENCE_COUNTER_ ASC, TIMESTAMP_ ASC
@@ -90,8 +94,9 @@ public class AgentHistoryQuery {
                             rs.getString("PROVIDER_"),
                             rs.getString("MODEL_"),
                             rs.getString("GOAL_"),
-                            rs.getTimestamp("START_TIME_"),
-                            rs.getTimestamp("END_TIME_"),
+                            rs.getString("INPUT_VARIABLES_"),
+                            toInstant(rs.getTimestamp("START_TIME_")),
+                            toInstant(rs.getTimestamp("END_TIME_")),
                             rs.getString("FINAL_OUTPUT_"),
                             rs.getInt("ITERATION_COUNT_"),
                             rs.getLong("TOTAL_PROMPT_TOKENS_"),
@@ -119,7 +124,7 @@ public class AgentHistoryQuery {
                     rs.getString("PROC_INST_ID_"),
                     rs.getString("EVENT_TYPE_"),
                     rs.getLong("SEQUENCE_COUNTER_"),
-                    rs.getTimestamp("TIMESTAMP_"),
+                    toInstant(rs.getTimestamp("TIMESTAMP_")),
                     loopIndexValue,
                     rs.getString("TOOL_CALL_ID_"),
                     rs.getString("TOOL_NAME_"),
@@ -128,9 +133,17 @@ public class AgentHistoryQuery {
                     completionTokensValue,
                     rs.getString("RESPONSE_TYPE_"),
                     toolCallCountValue,
+                    rs.getString("PROMPT_MESSAGES_"),
+                    rs.getString("RESPONSE_CONTENT_"),
                     durationMsValue,
                     rs.getString("STATUS_"),
-                    rs.getString("ERROR_MESSAGE_"));
+                    rs.getString("ERROR_MESSAGE_"),
+                    rs.getString("TOOL_INPUT_"),
+                    rs.getString("TOOL_OUTPUT_"));
         }
     };
+
+    private static Instant toInstant(Timestamp ts) {
+        return ts == null ? null : ts.toInstant();
+    }
 }

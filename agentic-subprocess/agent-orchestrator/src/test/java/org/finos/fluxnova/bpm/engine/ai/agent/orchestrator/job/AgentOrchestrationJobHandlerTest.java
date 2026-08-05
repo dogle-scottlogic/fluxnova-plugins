@@ -26,11 +26,15 @@ import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.LlmResponse;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolInvocationResult;
+import org.finos.fluxnova.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
+import org.finos.fluxnova.bpm.engine.impl.context.Context;
+import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEventProcessor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
@@ -412,6 +416,64 @@ class AgentOrchestrationJobHandlerTest {
                         AgentOrchestrationConfig restored = handler.newConfiguration(canonical);
 
                         assertFalse(restored.hasToolResult());
+                }
+        }
+
+        @Nested
+        class HistoryEventFiring {
+
+                private void stubSimpleCompletion() {
+                        stubActiveExecution();
+                        stubActiveServices();
+                        stubRegistries();
+                        stubEmptyState();
+                        ResolvedContext resolvedContext = new ResolvedContext(Map.of());
+                        when(contextResolver.resolve(runtimeService, SCOPE_EXECUTION_ID, contextSpec))
+                                        .thenReturn(resolvedContext);
+                        LlmResponse response = new LlmResponse("Done", List.of(),
+                                        List.of(ConversationEntry.assistant("Done", List.of())), 0L, 0L);
+                        when(llmService.call(eq(agentConfig), eq(toolCatalogue),
+                                        eq(resolvedContext), anyList())).thenReturn(response);
+                }
+
+                @Test
+                void execute_whenEngineContextPresent_delegatesToHistoryEventProcessor() {
+                        stubSimpleCompletion();
+
+                        try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+                                        MockedStatic<HistoryEventProcessor> histMock =
+                                                        mockStatic(HistoryEventProcessor.class)) {
+
+                                contextMock.when(Context::getProcessEngineConfiguration)
+                                                .thenReturn(mock(ProcessEngineConfigurationImpl.class));
+
+                                handler.execute(AgentOrchestrationConfig.forEntry(), execution,
+                                                commandContext, null);
+
+                                histMock.verify(
+                                                () -> HistoryEventProcessor.processHistoryEvents(
+                                                                any(HistoryEventProcessor.HistoryEventCreator.class)),
+                                                atLeastOnce());
+                        }
+                }
+
+                @Test
+                void execute_whenNoEngineContext_suppressesHistoryEvents() {
+                        stubSimpleCompletion();
+
+                        try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+                                        MockedStatic<HistoryEventProcessor> histMock =
+                                                        mockStatic(HistoryEventProcessor.class)) {
+
+                                contextMock.when(Context::getProcessEngineConfiguration).thenReturn(null);
+
+                                handler.execute(AgentOrchestrationConfig.forEntry(), execution,
+                                                commandContext, null);
+
+                                histMock.verify(
+                                                () -> HistoryEventProcessor.processHistoryEvents(any()),
+                                                never());
+                        }
                 }
         }
 }

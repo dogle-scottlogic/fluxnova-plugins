@@ -2,7 +2,7 @@ package org.finos.fluxnova.bpm.engine.shared.agent;
 
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * History event for a single LLM call within an orchestration loop.
@@ -25,7 +25,11 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
     /** {@code null} on {@code request} events; {@code "TEXT"} or {@code "TOOL_CALLS"} on response. */
     private String responseType;
     private int toolCallCount;
-    private Date timestamp;
+    /** JSON-serialised conversation history sent to the LLM; populated on {@code request} events. */
+    private String promptMessages;
+    /** The LLM's text response; populated on {@code response} events. */
+    private String responseContent;
+    private Instant timestamp;
 
     public String getSubprocessElementId() {
         return subprocessElementId;
@@ -99,11 +103,27 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
         this.toolCallCount = toolCallCount;
     }
 
-    public Date getTimestamp() {
+    public Instant getTimestamp() {
         return timestamp;
     }
 
-    public void setTimestamp(Date timestamp) {
+    public void setTimestamp(Instant timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public String getPromptMessages() {
+        return promptMessages;
+    }
+
+    public void setPromptMessages(String promptMessages) {
+        this.promptMessages = promptMessages;
+    }
+
+    public String getResponseContent() {
+        return responseContent;
+    }
+
+    public void setResponseContent(String responseContent) {
+        this.responseContent = responseContent;
     }
 }

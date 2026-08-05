@@ -8,7 +8,10 @@ import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManag
 import org.finos.fluxnova.bpm.engine.delegate.DelegateExecution;
 import org.finos.fluxnova.bpm.engine.delegate.ExecutionListener;
 import org.finos.fluxnova.bpm.engine.impl.context.Context;
-import org.finos.fluxnova.bpm.engine.impl.history.HistoryEventProcessor;
+import org.finos.fluxnova.bpm.engine.impl.context.Context;
+import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
+import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEventProcessor;
+import org.finos.fluxnova.bpm.engine.impl.history.producer.HistoryEventProducer;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.MessageEntity;
 import org.finos.fluxnova.bpm.engine.impl.util.ClockUtil;
@@ -16,7 +19,7 @@ import org.finos.fluxnova.bpm.engine.shared.agent.AgentHistoryEventTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Date;
+import java.time.Instant;
 
 public class SubprocessToolCompletionListener implements ExecutionListener {
 
@@ -46,14 +49,15 @@ public class SubprocessToolCompletionListener implements ExecutionListener {
 
         String errorMessage = (String) execution.getVariable("_agentToolCallError");
         boolean failed = errorMessage != null;
+        String toolOutput = failed ? null : (String) execution.getVariable("_agentToolOutput");
         ToolResult result = failed
                 ? ToolResult.error(toolCallId, errorMessage)
-                : new ToolResult(toolCallId, execution.getCurrentActivityId(), null);
+                : new ToolResult(toolCallId, execution.getCurrentActivityId(), null, toolOutput);
 
         // Fire AGENT_TOOL_CALL_COMPLETED or AGENT_TOOL_CALL_FAILED
         if (scope != null) {
             fireToolCallCompletion(scope, toolCallId, execution.getCurrentActivityId(),
-                    execution.getCurrentActivityName(), failed, errorMessage);
+                    execution.getCurrentActivityName(), failed, errorMessage, toolOutput);
         }
 
         MessageEntity job = new MessageEntity();
@@ -66,38 +70,45 @@ public class SubprocessToolCompletionListener implements ExecutionListener {
     }
 
     private void fireToolCallCompletion(ExecutionEntity scope, String toolCallId,
-            String toolElementId, String toolName, boolean failed, String errorMessage) {
+            String toolElementId, String toolName, boolean failed, String errorMessage,
+            String toolOutput) {
         AgentHistoryEventTypes eventType = failed
                 ? AgentHistoryEventTypes.AGENT_TOOL_CALL_FAILED
                 : AgentHistoryEventTypes.AGENT_TOOL_CALL_COMPLETED;
         String status = failed ? "FAILED" : "COMPLETED";
 
-        Date completedAt = ClockUtil.getCurrentTime();
-        Date requestedAt = stateManager.getToolRequestTime(
+        Instant completedAt = ClockUtil.getCurrentTime().toInstant();
+        Instant requestedAt = stateManager.getToolRequestTime(
                 scope.getProcessEngineServices().getRuntimeService(),
                 scope.getId(), toolCallId);
-        long durationMs = requestedAt != null ? completedAt.getTime() - requestedAt.getTime() : 0L;
+        long durationMs = requestedAt != null ? completedAt.toEpochMilli() - requestedAt.toEpochMilli() : 0L;
         int loopIndex = stateManager.getLoopIndex(
                 scope.getProcessEngineServices().getRuntimeService(), scope.getId());
 
-        HistoryEventProcessor.processHistoryEvent(producer -> {
-            AgentToolCallHistoryEvent event = new AgentToolCallHistoryEvent();
-            event.setEventType(eventType.getEventName());
-            event.setProcessInstanceId(scope.getProcessInstanceId());
-            event.setExecutionId(scope.getId());
-            event.setProcessDefinitionKey(scope.getProcessDefinitionId());
-            event.setSubprocessElementId(scope.getActivityId());
-            event.setSubprocessExecutionId(scope.getId());
-            event.setLoopIndex(loopIndex);
-            event.setToolCallId(toolCallId);
-            event.setToolElementId(toolElementId);
-            event.setToolName(toolName);
-            event.setRequestedAt(requestedAt);
-            event.setCompletedAt(completedAt);
-            event.setDurationMs(durationMs);
-            event.setStatus(status);
-            event.setErrorMessage(errorMessage);
-            return event;
+        if (Context.getProcessEngineConfiguration() != null) {
+            HistoryEventProcessor.processHistoryEvents(new HistoryEventProcessor.HistoryEventCreator() {
+            @Override
+            public HistoryEvent createHistoryEvent(HistoryEventProducer producer) {
+                AgentToolCallHistoryEvent event = new AgentToolCallHistoryEvent();
+                event.setEventType(eventType.getEventName());
+                event.setProcessInstanceId(scope.getProcessInstanceId());
+                event.setExecutionId(scope.getId());
+                event.setProcessDefinitionKey(scope.getProcessDefinitionId());
+                event.setSubprocessElementId(scope.getActivityId());
+                event.setSubprocessExecutionId(scope.getId());
+                event.setLoopIndex(loopIndex);
+                event.setToolCallId(toolCallId);
+                event.setToolElementId(toolElementId);
+                event.setToolName(toolName);
+                event.setRequestedAt(requestedAt);
+                event.setCompletedAt(completedAt);
+                event.setDurationMs(durationMs);
+                event.setStatus(status);
+                event.setErrorMessage(errorMessage);
+                event.setToolOutput(toolOutput);
+                return event;
+            }
         });
+        }
     }
 }

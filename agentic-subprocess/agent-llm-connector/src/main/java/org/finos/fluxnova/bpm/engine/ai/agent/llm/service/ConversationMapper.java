@@ -74,7 +74,7 @@ class ConversationMapper {
                                     tc.toolCallId(),
                                     "function",
                                     tc.toolId(),
-                                    "{}"))
+                                    tc.arguments() != null ? tc.arguments() : "{}"))
                             .collect(Collectors.toList()))
                     .build();
             case TOOL -> ToolResponseMessage.builder()
@@ -98,7 +98,7 @@ class ConversationMapper {
         List<AssistantMessage.ToolCall> springCalls = message.getToolCalls();
 
         List<ToolCallRequest> toolCalls = springCalls.stream()
-                .map(tc -> new ToolCallRequest(tc.id(), tc.name()))
+                .map(tc -> new ToolCallRequest(tc.id(), tc.name(), tc.arguments()))
                 .collect(Collectors.toList());
 
         List<ConversationEntry> updated = new ArrayList<>(

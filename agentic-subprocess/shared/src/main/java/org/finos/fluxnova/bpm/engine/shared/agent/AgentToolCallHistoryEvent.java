@@ -2,7 +2,7 @@ package org.finos.fluxnova.bpm.engine.shared.agent;
 
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * History event for a single tool call within an orchestration loop.
@@ -24,12 +24,16 @@ public class AgentToolCallHistoryEvent extends HistoryEvent {
     private String toolCallId;
     private String toolName;
     private String toolElementId;
-    private Date requestedAt;
-    private Date completedAt;
+    private Instant requestedAt;
+    private Instant completedAt;
     private long durationMs;
     /** {@code PENDING}, {@code COMPLETED}, or {@code FAILED}. */
     private String status;
     private String errorMessage;
+    /** JSON-encoded arguments supplied by the LLM when requesting this tool call. */
+    private String toolInput;
+    /** Output produced by the tool activity, as set via the {@code _agentToolOutput} variable. */
+    private String toolOutput;
 
     public String getSubprocessElementId() {
         return subprocessElementId;
@@ -79,19 +83,19 @@ public class AgentToolCallHistoryEvent extends HistoryEvent {
         this.toolElementId = toolElementId;
     }
 
-    public Date getRequestedAt() {
+    public Instant getRequestedAt() {
         return requestedAt;
     }
 
-    public void setRequestedAt(Date requestedAt) {
+    public void setRequestedAt(Instant requestedAt) {
         this.requestedAt = requestedAt;
     }
 
-    public Date getCompletedAt() {
+    public Instant getCompletedAt() {
         return completedAt;
     }
 
-    public void setCompletedAt(Date completedAt) {
+    public void setCompletedAt(Instant completedAt) {
         this.completedAt = completedAt;
     }
 
@@ -117,5 +121,21 @@ public class AgentToolCallHistoryEvent extends HistoryEvent {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public String getToolInput() {
+        return toolInput;
+    }
+
+    public void setToolInput(String toolInput) {
+        this.toolInput = toolInput;
+    }
+
+    public String getToolOutput() {
+        return toolOutput;
+    }
+
+    public void setToolOutput(String toolOutput) {
+        this.toolOutput = toolOutput;
     }
 }

@@ -6,7 +6,7 @@ import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.job.AgentOrchestratio
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.AgentOrchestrationConfig;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManager;
 import org.finos.fluxnova.bpm.engine.impl.context.Context;
-import org.finos.fluxnova.bpm.engine.impl.history.HistoryEventProcessor;
+import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEventProcessor;
 import org.finos.fluxnova.bpm.engine.impl.interceptor.CommandContext;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.JobManager;

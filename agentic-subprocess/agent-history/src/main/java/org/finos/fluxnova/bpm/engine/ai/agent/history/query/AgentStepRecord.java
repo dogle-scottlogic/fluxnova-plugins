@@ -1,10 +1,13 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.history.query;
 
-import java.util.Date;
+import lombok.Getter;
+
+import java.time.Instant;
 
 /**
  * Represents a row from {@code ACT_HI_AGENT_STEP}.
  */
+@Getter
 public class AgentStepRecord {
 
     private final String id;
@@ -12,7 +15,7 @@ public class AgentStepRecord {
     private final String processInstanceId;
     private final String eventType;
     private final long sequenceCounter;
-    private final Date timestamp;
+    private final Instant timestamp;
     private final Integer loopIndex;
     private final String toolCallId;
     private final String toolName;
@@ -21,15 +24,21 @@ public class AgentStepRecord {
     private final Long completionTokens;
     private final String responseType;
     private final Integer toolCallCount;
+    private final String promptMessages;
+    private final String responseContent;
     private final Long durationMs;
     private final String status;
     private final String errorMessage;
+    private final String toolInput;
+    private final String toolOutput;
 
     public AgentStepRecord(String id, String subprocessExecutionId, String processInstanceId,
-            String eventType, long sequenceCounter, Date timestamp, Integer loopIndex,
+            String eventType, long sequenceCounter, Instant timestamp, Integer loopIndex,
             String toolCallId, String toolName, String toolElementId, Long promptTokens,
-            Long completionTokens, String responseType, Integer toolCallCount, Long durationMs,
-            String status, String errorMessage) {
+            Long completionTokens, String responseType, Integer toolCallCount,
+            String promptMessages, String responseContent,
+            Long durationMs, String status, String errorMessage,
+            String toolInput, String toolOutput) {
         this.id = id;
         this.subprocessExecutionId = subprocessExecutionId;
         this.processInstanceId = processInstanceId;
@@ -44,26 +53,12 @@ public class AgentStepRecord {
         this.completionTokens = completionTokens;
         this.responseType = responseType;
         this.toolCallCount = toolCallCount;
+        this.promptMessages = promptMessages;
+        this.responseContent = responseContent;
         this.durationMs = durationMs;
         this.status = status;
         this.errorMessage = errorMessage;
+        this.toolInput = toolInput;
+        this.toolOutput = toolOutput;
     }
-
-    public String getId() { return id; }
-    public String getSubprocessExecutionId() { return subprocessExecutionId; }
-    public String getProcessInstanceId() { return processInstanceId; }
-    public String getEventType() { return eventType; }
-    public long getSequenceCounter() { return sequenceCounter; }
-    public Date getTimestamp() { return timestamp; }
-    public Integer getLoopIndex() { return loopIndex; }
-    public String getToolCallId() { return toolCallId; }
-    public String getToolName() { return toolName; }
-    public String getToolElementId() { return toolElementId; }
-    public Long getPromptTokens() { return promptTokens; }
-    public Long getCompletionTokens() { return completionTokens; }
-    public String getResponseType() { return responseType; }
-    public Integer getToolCallCount() { return toolCallCount; }
-    public Long getDurationMs() { return durationMs; }
-    public String getStatus() { return status; }
-    public String getErrorMessage() { return errorMessage; }
 }

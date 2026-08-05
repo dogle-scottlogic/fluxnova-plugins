@@ -6,12 +6,15 @@ import org.finos.fluxnova.bpm.engine.shared.agent.AgentSubprocessHistoryEvent;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentToolCallHistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.handler.HistoryEventHandler;
+
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Timestamp;
-import java.util.Date;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -54,6 +57,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
         }
     }
 
+    @Override
+    public void handleEvents(List<HistoryEvent> historyEvents) {
+        historyEvents.forEach(this::handleEvent);
+    }
+
     // -----------------------------------------------------------------------
     // Subprocess event
     // -----------------------------------------------------------------------
@@ -71,10 +79,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                 INSERT INTO ACT_HI_AGENT_SUBPROCESS (
                     ID_, PROC_INST_ID_, EXECUTION_ID_, PROC_DEF_KEY_,
                     ELEMENT_ID_, PROVIDER_, MODEL_, GOAL_,
+                    INPUT_VARIABLES_,
                     START_TIME_, END_TIME_, FINAL_OUTPUT_,
                     ITERATION_COUNT_, TOTAL_PROMPT_TOKENS_, TOTAL_COMPLETION_TOKENS_,
                     REMOVAL_TIME_
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try {
             jdbcTemplate.update(sql,
@@ -86,6 +95,7 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     event.getProvider(),
                     event.getModel(),
                     event.getGoal(),
+                    event.getInputVariables(),
                     toTimestamp(event.getStartTime()),
                     null,
                     null,
@@ -93,6 +103,10 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     0L,
                     0L,
                     toTimestamp(event.getRemovalTime()));
+        } catch (DuplicateKeyException e) {
+            // Job retry: the row was already inserted on a previous attempt — safe to ignore.
+            LOG.debug("Agent subprocess history row already exists for execution '{}', skipping insert",
+                    event.getSubprocessExecutionId());
         } catch (Exception e) {
             LOG.error("Failed to insert agent subprocess history for execution '{}'",
                     event.getSubprocessExecutionId(), e);
@@ -131,7 +145,7 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
 
     private void insertStep(AgentLoopHistoryEvent event) {
         String sql = stepInsertSql();
-        Date timestamp = event.getEndTime() != null ? event.getEndTime() : event.getStartTime();
+        Instant timestamp = event.getEndTime() != null ? event.getEndTime() : event.getStartTime();
         try {
             jdbcTemplate.update(sql,
                     UUID.randomUUID().toString(),
@@ -144,6 +158,7 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     null, null, null,
                     null, null,
                     null, null, null, null,
+                    null, null, null, null, null,
                     toTimestamp(event.getRemovalTime()));
         } catch (Exception e) {
             LOG.error("Failed to insert agent loop step for execution '{}'",
@@ -167,7 +182,9 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     nullIfZero(event.getCompletionTokens()),
                     event.getResponseType(),
                     nullIfZero(event.getToolCallCount()),
-                    null, null,
+                    event.getPromptMessages(),
+                    event.getResponseContent(),
+                    null, null, null, null, null,
                     toTimestamp(event.getRemovalTime()));
         } catch (Exception e) {
             LOG.error("Failed to insert agent LLM step for execution '{}'",
@@ -177,7 +194,7 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
 
     private void insertStep(AgentToolCallHistoryEvent event) {
         String sql = stepInsertSql();
-        Date timestamp = event.getCompletedAt() != null ? event.getCompletedAt() : event.getRequestedAt();
+        Instant timestamp = event.getCompletedAt() != null ? event.getCompletedAt() : event.getRequestedAt();
         try {
             jdbcTemplate.update(sql,
                     UUID.randomUUID().toString(),
@@ -190,9 +207,12 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     event.getToolCallId(),
                     event.getToolName(),
                     event.getToolElementId(),
-                    null, null, null, null,
+                    null, null, null, null, null, null,
                     nullIfZero(event.getDurationMs()),
                     event.getStatus(),
+                    event.getErrorMessage(),
+                    event.getToolInput(),
+                    event.getToolOutput(),
                     toTimestamp(event.getRemovalTime()));
         } catch (Exception e) {
             LOG.error("Failed to insert agent tool-call step for execution '{}'",
@@ -209,9 +229,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     TOOL_CALL_ID_, TOOL_NAME_, TOOL_ELEMENT_ID_,
                     PROMPT_TOKENS_, COMPLETION_TOKENS_,
                     RESPONSE_TYPE_, TOOL_CALL_COUNT_,
-                    DURATION_MS_, STATUS_,
+                    PROMPT_MESSAGES_, RESPONSE_CONTENT_,
+                    DURATION_MS_, STATUS_, ERROR_MESSAGE_,
+                    TOOL_INPUT_, TOOL_OUTPUT_,
                     REMOVAL_TIME_
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
     }
 
@@ -248,7 +270,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
     // Helpers
     // -----------------------------------------------------------------------
 
-    private Timestamp toTimestamp(Date date) {
+    private Timestamp toTimestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
+    }
+
+    private Timestamp toTimestamp(java.util.Date date) {
         return date == null ? null : new Timestamp(date.getTime());
     }
 

@@ -17,10 +17,16 @@ import javax.sql.DataSource;
  * <p>Registers:
  * <ul>
  *   <li>{@link AgentHistoryEventHandler} — persists history events to the DB.</li>
- *   <li>{@link AgentHistoryEnginePlugin} — registers the handler with the process engine.</li>
+ *   <li>{@link AgentHistoryEnginePlugin} — registers the handler with the process engine and
+ *       creates the plugin's tables via {@code db/create/agent-history.sql} on first startup.</li>
  *   <li>{@link AgentHistoryQuery} — JDBC-based query service.</li>
  *   <li>{@link AgentHistoryRestController} — REST endpoint.</li>
  * </ul>
+ *
+ * <p>Schema creation uses {@code CREATE TABLE IF NOT EXISTS} DDL executed by
+ * {@link org.springframework.jdbc.datasource.init.ResourceDatabasePopulator} inside
+ * {@link AgentHistoryEnginePlugin#postProcessEngineBuild} — the same approach as the engine
+ * itself, requiring no external migration tool.
  */
 @AutoConfiguration
 public class AgentHistoryAutoConfiguration {
@@ -33,9 +39,8 @@ public class AgentHistoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentHistoryEnginePlugin agentHistoryEnginePlugin(
-            AgentHistoryEventHandler agentHistoryEventHandler) {
-        return new AgentHistoryEnginePlugin(agentHistoryEventHandler);
+    public AgentHistoryEnginePlugin agentHistoryEnginePlugin(DataSource dataSource) {
+        return new AgentHistoryEnginePlugin(dataSource);
     }
 
     @Bean
