@@ -42,6 +42,14 @@
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
         <flatten-maven-plugin.version>1.5.0</flatten-maven-plugin.version>
         <spring-ai.version>2.0.0</spring-ai.version>
+
+        <!--
+            The OTEL engine plugin (org.finos.fluxnova.bpm:fluxnova-engine-plugin-otel) is not
+            yet part of the fluxnova-bom release train, so it is pinned here explicitly rather
+            than relying on the imported BOM. Update this once it ships as part of a matching
+            fluxnova.version release.
+        -->
+        <fluxnova-otel-plugin.version>3.1.0-SNAPSHOT</fluxnova-otel-plugin.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -74,6 +82,13 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
+            </dependency>
+
+            <!-- See the fluxnova-otel-plugin.version comment above for why this is pinned here. -->
+            <dependency>
+                <groupId>org.finos.fluxnova.bpm</groupId>
+                <artifactId>fluxnova-engine-plugin-otel</artifactId>
+                <version>${fluxnova-otel-plugin.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

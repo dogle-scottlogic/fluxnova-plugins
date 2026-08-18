@@ -1,11 +1,14 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.history.handler;
 
+import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelMetrics;
+import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentLlmHistoryEvent;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentLoopHistoryEvent;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentSubprocessHistoryEvent;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentToolCallHistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.event.HistoryEvent;
 import org.finos.fluxnova.bpm.engine.impl.history.handler.HistoryEventHandler;
+import org.finos.fluxnova.bpm.engine.shared.agent.AgentHistoryEventTypes;
 
 import java.util.List;
 import org.slf4j.Logger;
@@ -28,6 +31,11 @@ import java.util.UUID;
  *
  * <p>On {@code PROCESS_INSTANCE_END} events the handler back-fills the {@code REMOVAL_TIME_}
  * column on all related agent rows to respect the engine's configured removal-time strategy.
+ *
+ * <p>Alongside persistence, this handler also drives {@link AgentOtelMetrics} and {@link
+ * AgentOtelTracing} — recording GenAI-semconv-attributed OpenTelemetry metrics and spans for
+ * LLM calls, tool calls, and whole subprocess executions — on the same terminal events used to
+ * finalize each row (e.g. {@code agent-llm:response}, not {@code agent-llm:request}).</p>
  */
 public class AgentHistoryEventHandler implements HistoryEventHandler {
 
@@ -37,9 +45,22 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
     private static final String SUBPROCESS_EVENT_TYPE_END = "agent-subprocess:end";
 
     private final JdbcTemplate jdbcTemplate;
+    private final AgentOtelMetrics otelMetrics;
+    private final AgentOtelTracing otelTracing;
 
     public AgentHistoryEventHandler(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, new AgentOtelMetrics(), new AgentOtelTracing());
+    }
+
+    public AgentHistoryEventHandler(JdbcTemplate jdbcTemplate, AgentOtelMetrics otelMetrics) {
+        this(jdbcTemplate, otelMetrics, new AgentOtelTracing());
+    }
+
+    public AgentHistoryEventHandler(JdbcTemplate jdbcTemplate, AgentOtelMetrics otelMetrics,
+            AgentOtelTracing otelTracing) {
         this.jdbcTemplate = jdbcTemplate;
+        this.otelMetrics = otelMetrics;
+        this.otelTracing = otelTracing;
     }
 
     @Override
@@ -69,8 +90,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
     private void handleSubprocessEvent(AgentSubprocessHistoryEvent event) {
         if (SUBPROCESS_EVENT_TYPE_START.equals(event.getEventType())) {
             insertSubprocess(event);
+            otelTracing.startSubprocess(event);
         } else if (SUBPROCESS_EVENT_TYPE_END.equals(event.getEventType())) {
             updateSubprocess(event);
+            otelMetrics.recordSubprocess(event);
+            otelTracing.endSubprocess(event);
         }
     }
 
@@ -184,11 +208,19 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
                     nullIfZero(event.getToolCallCount()),
                     event.getPromptMessages(),
                     event.getResponseContent(),
-                    null, null, null, null, null,
+                    nullIfZero(event.getDurationMs()),
+                    null, null, null, null,
                     toTimestamp(event.getRemovalTime()));
         } catch (Exception e) {
             LOG.error("Failed to insert agent LLM step for execution '{}'",
                     event.getSubprocessExecutionId(), e);
+        }
+
+        if (AgentHistoryEventTypes.AGENT_LLM_REQUEST.getEventName().equals(event.getEventType())) {
+            otelTracing.startLlmCall(event);
+        } else if (AgentHistoryEventTypes.AGENT_LLM_RESPONSE.getEventName().equals(event.getEventType())) {
+            otelMetrics.recordLlmCall(event);
+            otelTracing.endLlmCall(event);
         }
     }
 
@@ -217,6 +249,14 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
         } catch (Exception e) {
             LOG.error("Failed to insert agent tool-call step for execution '{}'",
                     event.getSubprocessExecutionId(), e);
+        }
+
+        if (AgentHistoryEventTypes.AGENT_TOOL_CALL_REQUESTED.getEventName().equals(event.getEventType())) {
+            otelTracing.startToolCall(event);
+        } else if (AgentHistoryEventTypes.AGENT_TOOL_CALL_COMPLETED.getEventName().equals(event.getEventType())
+                || AgentHistoryEventTypes.AGENT_TOOL_CALL_FAILED.getEventName().equals(event.getEventType())) {
+            otelMetrics.recordToolCall(event);
+            otelTracing.endToolCall(event);
         }
     }
 

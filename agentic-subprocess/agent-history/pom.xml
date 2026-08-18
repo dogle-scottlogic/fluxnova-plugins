@@ -25,6 +25,11 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>org.finos.fluxnova.bpm</groupId>
+            <artifactId>fluxnova-engine-plugin-otel</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>org.finos.fluxnova.bpm.springboot</groupId>
             <artifactId>fluxnova-bpm-spring-boot-starter</artifactId>
             <scope>provided</scope>

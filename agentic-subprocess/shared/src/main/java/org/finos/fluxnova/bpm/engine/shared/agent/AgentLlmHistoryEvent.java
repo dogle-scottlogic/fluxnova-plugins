@@ -16,6 +16,7 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
     private String subprocessElementId;
     private String subprocessExecutionId;
     private int loopIndex;
+    private String provider;
     private String model;
     private int messageCount;
     /** Zero on {@code request} events; populated from the LLM response metadata. */
@@ -29,6 +30,8 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
     private String promptMessages;
     /** The LLM's text response; populated on {@code response} events. */
     private String responseContent;
+    /** Zero on {@code request} events; wall-clock time spent in {@code LlmService.call()}. */
+    private long durationMs;
     private Instant timestamp;
 
     public String getSubprocessElementId() {
@@ -61,6 +64,14 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 
     public int getMessageCount() {
@@ -125,5 +136,13 @@ public class AgentLlmHistoryEvent extends HistoryEvent {
 
     public void setResponseContent(String responseContent) {
         this.responseContent = responseContent;
+    }
+
+    public long getDurationMs() {
+        return durationMs;
+    }
+
+    public void setDurationMs(long durationMs) {
+        this.durationMs = durationMs;
     }
 }

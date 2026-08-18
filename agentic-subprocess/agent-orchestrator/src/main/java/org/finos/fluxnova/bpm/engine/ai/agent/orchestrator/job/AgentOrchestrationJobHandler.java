@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -221,8 +222,10 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         // Fire AGENT_LLM_REQUEST
         fireLlmRequest(execution, loopIndex, agentConfig, context, history);
 
+        Instant llmCallStart = ClockUtil.getCurrentTime().toInstant();
         LlmResponse response =
                 llmService.call(agentConfig, catalogue, context, history);
+        long llmDurationMs = Duration.between(llmCallStart, ClockUtil.getCurrentTime().toInstant()).toMillis();
         LOG.debug("LLM response for scope '{}': toolCalls={}", scopeExecutionId, response.toolCalls());
         stateManager.saveHistory(runtimeService, scopeExecutionId, response.updatedHistory());
         stateManager.accumulateTokens(runtimeService, scopeExecutionId,
@@ -230,9 +233,9 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
 
         // Fire AGENT_LLM_RESPONSE
         String responseType = response.toolCalls().isEmpty() ? "TEXT" : "TOOL_CALLS";
-        fireLlmResponse(execution, loopIndex, agentConfig.model(),
+        fireLlmResponse(execution, loopIndex, agentConfig.provider(), agentConfig.model(),
                 response.promptTokens(), response.completionTokens(),
-                responseType, response.toolCalls().size(), response.assistantText());
+                responseType, response.toolCalls().size(), response.assistantText(), llmDurationMs);
 
         if (response.toolCalls().isEmpty()) {
             LOG.debug("No tool calls returned, triggering termination for scope '{}'", scopeExecutionId);
@@ -459,6 +462,7 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                 event.setSubprocessElementId(execution.getActivityId());
                 event.setSubprocessExecutionId(execution.getId());
                 event.setLoopIndex(loopIndex);
+                event.setProvider(agentConfig.provider());
                 event.setModel(agentConfig.model());
                 event.setMessageCount(messageCount);
                 event.setPromptMessages(promptMessages);
@@ -488,9 +492,9 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         return full;
     }
 
-    private void fireLlmResponse(ExecutionEntity execution, int loopIndex, String model,
+    private void fireLlmResponse(ExecutionEntity execution, int loopIndex, String provider, String model,
             long promptTokens, long completionTokens, String responseType, int toolCallCount,
-            String responseContent) {
+            String responseContent, long durationMs) {
         fireHistoryEvent(new HistoryEventProcessor.HistoryEventCreator() {
             @Override
             public HistoryEvent createHistoryEvent(HistoryEventProducer producer) {
@@ -502,12 +506,14 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                 event.setSubprocessElementId(execution.getActivityId());
                 event.setSubprocessExecutionId(execution.getId());
                 event.setLoopIndex(loopIndex);
+                event.setProvider(provider);
                 event.setModel(model);
                 event.setPromptTokens(promptTokens);
                 event.setCompletionTokens(completionTokens);
                 event.setResponseType(responseType);
                 event.setToolCallCount(toolCallCount);
                 event.setResponseContent(responseContent);
+                event.setDurationMs(durationMs);
                 event.setTimestamp(ClockUtil.getCurrentTime().toInstant());
                 return event;
             }
