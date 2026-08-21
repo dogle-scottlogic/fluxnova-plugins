@@ -1,5 +1,6 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.history.handler;
 
+import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.shared.agent.AgentLlmHistoryEvent;
@@ -56,6 +57,10 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
         this(jdbcTemplate, otelMetrics, new AgentOtelTracing());
     }
 
+    public AgentHistoryEventHandler(JdbcTemplate jdbcTemplate, AgentOtelContentCaptureProperties contentCaptureProperties) {
+        this(jdbcTemplate, new AgentOtelMetrics(), new AgentOtelTracing(contentCaptureProperties));
+    }
+
     public AgentHistoryEventHandler(JdbcTemplate jdbcTemplate, AgentOtelMetrics otelMetrics,
             AgentOtelTracing otelTracing) {
         this.jdbcTemplate = jdbcTemplate;
@@ -93,8 +98,11 @@ public class AgentHistoryEventHandler implements HistoryEventHandler {
             otelTracing.startSubprocess(event);
         } else if (SUBPROCESS_EVENT_TYPE_END.equals(event.getEventType())) {
             updateSubprocess(event);
-            otelMetrics.recordSubprocess(event);
-            otelTracing.endSubprocess(event);
+            // otelMetrics.recordSubprocess() must run first: it owns (and clears) the per-execution
+            // tool-call counter, and its return value is passed to otelTracing.endSubprocess() so the
+            // invoke_agent span's gen_ai.invoke_agent.tool_calls attribute matches the metric exactly.
+            long toolCalls = otelMetrics.recordSubprocess(event);
+            otelTracing.endSubprocess(event, toolCalls);
         }
     }
 

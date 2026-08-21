@@ -114,6 +114,12 @@ exporters:
     traces_endpoint: http://localhost:5000/v1/traces
     headers:
       x-mlflow-experiment-id: "1"
+  otlphttp/harness:
+    # Optional: an additional, additive fan-out to the harness's own local
+    # OTLP trace receiver (fluxnova.otel_receiver) — see "Harness OTLP
+    # receiver" in GENAI_SEMCONV_ALIGNMENT.md. Only needed if you're running
+    # the harness's OTEL-backed DeepEval data path; leave out otherwise.
+    traces_endpoint: http://localhost:4319/v1/traces
 
 service:
   pipelines:
@@ -122,7 +128,7 @@ service:
       exporters: [prometheus, debug]
     traces:
       receivers: [otlp]
-      exporters: [otlphttp/mlflow, debug]
+      exporters: [otlphttp/mlflow, otlphttp/harness, debug]
 ```
 
 Start it (from the install directory):
@@ -238,13 +244,30 @@ and let it complete.
   http://localhost:5000/api/2.0/mlflow/traces?experiment_ids=<id>
   ```
 
+**Traces (harness OTLP receiver, for `fluxnova.otel_client.OtelClient`):**
+- If you added the optional `otlphttp/harness` exporter in step 4, start
+  the receiver first (`otel-receiver --port 4319 --store harness/.fluxnova/otel-spans.json`,
+  from the harness venv) so it's listening before the run — spans are
+  appended live to the JSONL store as they arrive.
+- After the run completes, query it directly with `OtelClient`:
+  ```python
+  from fluxnova.otel_client import OtelClient
+  client = OtelClient(store_path="harness/.fluxnova/otel-spans.json")
+  client.get_invoke_agent_metrics(correlation_id=process_instance_id)
+  client.get_tool_call_spans(correlation_id=process_instance_id)
+  ```
+- See "Harness OTLP receiver" in `GENAI_SEMCONV_ALIGNMENT.md` for why this
+  exists alongside (not instead of) MLflow.
+
 **Troubleshooting the pipeline**, in order, using the collector's
 self-observability metrics scraped into Prometheus:
 1. `otelcol_receiver_accepted_metric_points_total` /
    `otelcol_receiver_accepted_spans_total` — did the engine send anything?
 2. `otelcol_exporter_sent_spans_total{exporter="otlphttp/mlflow"}` vs
    `otelcol_exporter_send_failed_spans_total{exporter="otlphttp/mlflow"}` —
-   did the collector successfully deliver to MLflow?
+   did the collector successfully deliver to MLflow? Check
+   `{exporter="otlphttp/harness"}` the same way if you're using the harness
+   receiver too.
 3. If failing, test the endpoint directly:
    ```powershell
    Invoke-WebRequest -Uri "http://localhost:5000/v1/traces" -Method Post `
@@ -255,3 +278,4 @@ self-observability metrics scraped into Prometheus:
    endpoint/path/headers are correct. A `404` usually means a doubled
    `/v1/traces/v1/traces` path — use `traces_endpoint` (not `endpoint`) in
    the collector's `otlphttp` exporter config.
+

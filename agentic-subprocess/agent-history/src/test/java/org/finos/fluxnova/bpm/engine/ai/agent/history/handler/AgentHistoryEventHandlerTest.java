@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Verifies that {@link AgentHistoryEventHandler} drives {@link AgentOtelMetrics} and {@link
@@ -100,15 +101,18 @@ class AgentHistoryEventHandlerTest {
     }
 
     @Test
-    void handleEvent_subprocessEnd_recordsMetricAndEndsSpan() {
+    void handleEvent_subprocessEnd_recordsMetricAndEndsSpanWithSameToolCallCount() {
         AgentSubprocessHistoryEvent event = new AgentSubprocessHistoryEvent();
         event.setEventType("agent-subprocess:end");
         event.setSubprocessExecutionId("exec-1");
+        when(otelMetrics.recordSubprocess(event)).thenReturn(3L);
 
         handler.handleEvent(event);
 
         verify(otelMetrics).recordSubprocess(event);
-        verify(otelTracing).endSubprocess(event);
+        // The tool-call count returned by the metric MUST be passed straight through to the span,
+        // so gen_ai.invoke_agent.tool_calls stays consistent between the two signals.
+        verify(otelTracing).endSubprocess(event, 3L);
     }
 
     @Test
@@ -121,6 +125,6 @@ class AgentHistoryEventHandlerTest {
 
         verify(otelTracing).startSubprocess(event);
         verify(otelMetrics, never()).recordSubprocess(event);
-        verify(otelTracing, never()).endSubprocess(event);
+        verify(otelTracing, never()).endSubprocess(event, 0L);
     }
 }

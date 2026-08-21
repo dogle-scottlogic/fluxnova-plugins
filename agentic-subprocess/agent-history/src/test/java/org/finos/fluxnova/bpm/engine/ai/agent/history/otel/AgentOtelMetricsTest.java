@@ -108,6 +108,7 @@ class AgentOtelMetricsTest {
         subprocessEvent.setSubprocessElementId("Activity_agent");
         subprocessEvent.setProvider("openai");
         subprocessEvent.setModel("gpt-4o");
+        subprocessEvent.setIterationCount(3);
         subprocessEvent.setStartTime(Instant.parse("2024-01-01T00:00:00Z"));
         subprocessEvent.setEndTime(Instant.parse("2024-01-01T00:00:01Z"));
 

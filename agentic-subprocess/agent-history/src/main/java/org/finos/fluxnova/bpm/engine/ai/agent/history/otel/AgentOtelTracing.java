@@ -36,6 +36,15 @@ import java.util.concurrent.ConcurrentMap;
  * (falling back to plain {@code invoke_agent} when unavailable); {@code execute_tool} spans also
  * carry {@code gen_ai.agent.name} for the executing agent when known.</p>
  *
+ * <p>The {@code invoke_agent} span also carries {@code gen_ai.invoke_agent.inference_calls} and
+ * {@code gen_ai.invoke_agent.tool_calls} attributes (set at span end), using the same
+ * authoritative values {@link AgentOtelMetrics} records for the corresponding metrics — so a
+ * trace-only consumer correlating by {@code gen_ai.conversation.id} (e.g. a test harness'
+ * {@code OtelClient}) can read the exact per-run counts directly off the span, instead of
+ * counting {@code chat}/{@code execute_tool} child spans, which would reintroduce the "1 chat
+ * call ≈ 1 loop turn" proxy assumption the metric-side fix was specifically designed to
+ * eliminate.</p>
+ *
  * <p><b>Correlation and its limits.</b> {@link AgentHistoryEventHandler} observes each history
  * event independently rather than within a single call stack (LLM calls are synchronous, but
  * tool calls execute asynchronously as BPMN activities and the loop spans multiple job
@@ -55,6 +64,14 @@ import java.util.concurrent.ConcurrentMap;
  * end with {@code StatusCode.OK} even when the underlying job/LLM call ultimately errors —
  * tracking that requires plumbing a status field through the orchestrator's history events,
  * which is out of scope here.</p>
+ *
+ * <p><b>Content capture is opt-in.</b> {@code gen_ai.system_instructions}, {@code
+ * gen_ai.input.messages}, {@code gen_ai.output.messages}, and {@code
+ * gen_ai.tool.call.arguments}/{@code .result} are only set when {@link
+ * AgentOtelContentCaptureProperties#isCaptureContent()} is {@code true} (default {@code false}),
+ * since these carry the raw agent goal, prompts/responses, and tool inputs/outputs, which may
+ * contain sensitive data. {@code gen_ai.tool.definitions} is not implemented at all — no tool
+ * catalogue data flows through these history events today.</p>
  */
 public class AgentOtelTracing {
 
@@ -71,6 +88,17 @@ public class AgentOtelTracing {
     private static final AttributeKey<String> ERROR_TYPE = AttributeKey.stringKey("error.type");
     private static final AttributeKey<String> AGENT_NAME = AttributeKey.stringKey("gen_ai.agent.name");
     private static final AttributeKey<String> CONVERSATION_ID = AttributeKey.stringKey("gen_ai.conversation.id");
+    private static final AttributeKey<String> SYSTEM_INSTRUCTIONS =
+            AttributeKey.stringKey("gen_ai.system_instructions");
+    private static final AttributeKey<String> INPUT_MESSAGES = AttributeKey.stringKey("gen_ai.input.messages");
+    private static final AttributeKey<String> OUTPUT_MESSAGES = AttributeKey.stringKey("gen_ai.output.messages");
+    private static final AttributeKey<String> TOOL_CALL_ARGUMENTS =
+            AttributeKey.stringKey("gen_ai.tool.call.arguments");
+    private static final AttributeKey<String> TOOL_CALL_RESULT = AttributeKey.stringKey("gen_ai.tool.call.result");
+    private static final AttributeKey<Long> INVOKE_AGENT_INFERENCE_CALLS =
+            AttributeKey.longKey("gen_ai.invoke_agent.inference_calls");
+    private static final AttributeKey<Long> INVOKE_AGENT_TOOL_CALLS =
+            AttributeKey.longKey("gen_ai.invoke_agent.tool_calls");
 
     private static final String OPERATION_CHAT = "chat";
     private static final String OPERATION_EXECUTE_TOOL = "execute_tool";
@@ -80,6 +108,15 @@ public class AgentOtelTracing {
     private final ConcurrentMap<String, Span> subprocessSpans = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Span> llmSpans = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Span> toolSpans = new ConcurrentHashMap<>();
+    private final AgentOtelContentCaptureProperties contentCaptureProperties;
+
+    public AgentOtelTracing() {
+        this(new AgentOtelContentCaptureProperties());
+    }
+
+    public AgentOtelTracing(AgentOtelContentCaptureProperties contentCaptureProperties) {
+        this.contentCaptureProperties = contentCaptureProperties;
+    }
 
     public void startSubprocess(AgentSubprocessHistoryEvent event) {
         SpanBuilder builder = tracer().spanBuilder(spanName(OPERATION_INVOKE_AGENT, event.getSubprocessElementId()))
@@ -89,11 +126,26 @@ public class AgentOtelTracing {
                 .setAttribute(PROVIDER_NAME, nullToUnknown(event.getProvider()))
                 .setAttribute(REQUEST_MODEL, nullToUnknown(event.getModel()))
                 .setAttribute(CONVERSATION_ID, nullToUnknown(event.getProcessInstanceId()));
+        if (captureContent()) {
+            putIfPresent(builder, SYSTEM_INSTRUCTIONS, event.getGoal());
+        }
 
         safePut(subprocessSpans, event.getSubprocessExecutionId(), builder.startSpan());
     }
 
-    public void endSubprocess(AgentSubprocessHistoryEvent event) {
+    /**
+     * Ends the {@code invoke_agent} span for one subprocess execution.
+     *
+     * @param toolCallCount the authoritative tool-call count for this execution, as recorded by
+     *                      {@link AgentOtelMetrics#recordSubprocess(AgentSubprocessHistoryEvent)}
+     *                      (the metric-side call MUST happen first and its return value passed
+     *                      here) — set as {@code gen_ai.invoke_agent.tool_calls} on the span so a
+     *                      trace-only consumer can read the exact count directly off the span
+     *                      instead of counting {@code execute_tool} child spans, which would
+     *                      reintroduce the "1 chat call ≈ 1 loop turn" proxy assumption this
+     *                      metric was designed to eliminate.
+     */
+    public void endSubprocess(AgentSubprocessHistoryEvent event, long toolCallCount) {
         Span span = safeRemove(subprocessSpans, event.getSubprocessExecutionId());
         if (span == null) {
             return;
@@ -104,6 +156,12 @@ public class AgentOtelTracing {
         if (event.getTotalCompletionTokens() > 0) {
             span.setAttribute(USAGE_OUTPUT_TOKENS, event.getTotalCompletionTokens());
         }
+        // gen_ai.invoke_agent.inference_calls/.tool_calls — the same authoritative values
+        // AgentOtelMetrics records for the corresponding metrics, set directly on the span so a
+        // trace-only consumer (correlating by gen_ai.conversation.id) can read the exact counts
+        // without deriving them from child-span counts.
+        span.setAttribute(INVOKE_AGENT_INFERENCE_CALLS, (long) event.getIterationCount());
+        span.setAttribute(INVOKE_AGENT_TOOL_CALLS, toolCallCount);
         span.setStatus(StatusCode.OK);
         span.end();
     }
@@ -117,6 +175,9 @@ public class AgentOtelTracing {
         // when the request event already carries it, rather than waiting for the response.
         if (event.getProvider() != null && !event.getProvider().isBlank()) {
             builder.setAttribute(PROVIDER_NAME, event.getProvider());
+        }
+        if (captureContent()) {
+            putIfPresent(builder, INPUT_MESSAGES, event.getPromptMessages());
         }
         withParent(builder, safeGet(subprocessSpans, event.getSubprocessExecutionId()));
 
@@ -138,6 +199,9 @@ public class AgentOtelTracing {
         if (event.getCompletionTokens() > 0) {
             span.setAttribute(USAGE_OUTPUT_TOKENS, event.getCompletionTokens());
         }
+        if (captureContent()) {
+            putIfPresent(span, OUTPUT_MESSAGES, event.getResponseContent());
+        }
         span.setStatus(StatusCode.OK);
         span.end();
     }
@@ -151,6 +215,9 @@ public class AgentOtelTracing {
                 .setAttribute(TOOL_CALL_ID, nullToUnknown(event.getToolCallId()));
         if (event.getSubprocessElementId() != null && !event.getSubprocessElementId().isBlank()) {
             builder.setAttribute(AGENT_NAME, event.getSubprocessElementId());
+        }
+        if (captureContent()) {
+            putIfPresent(builder, TOOL_CALL_ARGUMENTS, event.getToolInput());
         }
         withParent(builder, safeGet(subprocessSpans, event.getSubprocessExecutionId()));
 
@@ -167,6 +234,9 @@ public class AgentOtelTracing {
         if (toolName != null && !toolName.isBlank()) {
             span.setAttribute(TOOL_NAME, toolName);
         }
+        if (captureContent()) {
+            putIfPresent(span, TOOL_CALL_RESULT, event.getToolOutput());
+        }
         if (STATUS_FAILED.equals(event.getStatus())) {
             span.setAttribute(ERROR_TYPE, "tool_error");
             span.setStatus(StatusCode.ERROR, event.getErrorMessage());
@@ -179,6 +249,22 @@ public class AgentOtelTracing {
     private static void withParent(SpanBuilder builder, Span parent) {
         if (parent != null) {
             builder.setParent(Context.current().with(parent));
+        }
+    }
+
+    private boolean captureContent() {
+        return contentCaptureProperties.isCaptureContent();
+    }
+
+    private static void putIfPresent(SpanBuilder builder, AttributeKey<String> key, String value) {
+        if (value != null && !value.isBlank()) {
+            builder.setAttribute(key, value);
+        }
+    }
+
+    private static void putIfPresent(Span span, AttributeKey<String> key, String value) {
+        if (value != null && !value.isBlank()) {
+            span.setAttribute(key, value);
         }
     }
 

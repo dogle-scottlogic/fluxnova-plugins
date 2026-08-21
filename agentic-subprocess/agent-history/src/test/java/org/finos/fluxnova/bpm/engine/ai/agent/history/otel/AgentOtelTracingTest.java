@@ -20,6 +20,8 @@ class AgentOtelTracingTest {
 
     private final AgentOtelTracing tracing = new AgentOtelTracing();
 
+    private final AgentOtelContentCaptureProperties captureEnabled = captureEnabledProperties();
+
     @Test
     void subprocessSpan_startThenEnd_doesNotThrow() {
         AgentSubprocessHistoryEvent event = new AgentSubprocessHistoryEvent();
@@ -32,7 +34,7 @@ class AgentOtelTracingTest {
 
         assertDoesNotThrow(() -> {
             tracing.startSubprocess(event);
-            tracing.endSubprocess(event);
+            tracing.endSubprocess(event, 2);
         });
     }
 
@@ -41,7 +43,7 @@ class AgentOtelTracingTest {
         AgentSubprocessHistoryEvent event = new AgentSubprocessHistoryEvent();
         event.setSubprocessExecutionId("exec-orphan");
 
-        assertDoesNotThrow(() -> tracing.endSubprocess(event));
+        assertDoesNotThrow(() -> tracing.endSubprocess(event, 0));
     }
 
     @Test
@@ -101,5 +103,83 @@ class AgentOtelTracingTest {
         completed.setStatus("COMPLETED");
 
         assertDoesNotThrow(() -> tracing.endToolCall(completed));
+    }
+
+    @Test
+    void contentCapture_disabledByDefault_doesNotThrowWithContentPopulated() {
+        AgentSubprocessHistoryEvent subprocessEvent = new AgentSubprocessHistoryEvent();
+        subprocessEvent.setSubprocessExecutionId("exec-content-1");
+        subprocessEvent.setGoal("Book a flight for the customer");
+
+        AgentLlmHistoryEvent request = new AgentLlmHistoryEvent();
+        request.setSubprocessExecutionId("exec-content-1");
+        request.setLoopIndex(1);
+        request.setPromptMessages("[{\"role\":\"user\",\"content\":\"hello\"}]");
+
+        AgentLlmHistoryEvent response = new AgentLlmHistoryEvent();
+        response.setSubprocessExecutionId("exec-content-1");
+        response.setLoopIndex(1);
+        response.setResponseContent("hi there");
+
+        AgentToolCallHistoryEvent requested = new AgentToolCallHistoryEvent();
+        requested.setToolCallId("call-content-1");
+        requested.setToolInput("{\"city\":\"London\"}");
+
+        AgentToolCallHistoryEvent completed = new AgentToolCallHistoryEvent();
+        completed.setToolCallId("call-content-1");
+        completed.setStatus("COMPLETED");
+        completed.setToolOutput("{\"flightId\":\"BA123\"}");
+
+        assertDoesNotThrow(() -> {
+            tracing.startSubprocess(subprocessEvent);
+            tracing.startLlmCall(request);
+            tracing.endLlmCall(response);
+            tracing.startToolCall(requested);
+            tracing.endToolCall(completed);
+            tracing.endSubprocess(subprocessEvent, 1);
+        });
+    }
+
+    @Test
+    void contentCapture_enabled_doesNotThrowWithContentPopulated() {
+        AgentOtelTracing captureTracing = new AgentOtelTracing(captureEnabled);
+
+        AgentSubprocessHistoryEvent subprocessEvent = new AgentSubprocessHistoryEvent();
+        subprocessEvent.setSubprocessExecutionId("exec-content-2");
+        subprocessEvent.setGoal("Book a flight for the customer");
+
+        AgentLlmHistoryEvent request = new AgentLlmHistoryEvent();
+        request.setSubprocessExecutionId("exec-content-2");
+        request.setLoopIndex(1);
+        request.setPromptMessages("[{\"role\":\"user\",\"content\":\"hello\"}]");
+
+        AgentLlmHistoryEvent response = new AgentLlmHistoryEvent();
+        response.setSubprocessExecutionId("exec-content-2");
+        response.setLoopIndex(1);
+        response.setResponseContent("hi there");
+
+        AgentToolCallHistoryEvent requested = new AgentToolCallHistoryEvent();
+        requested.setToolCallId("call-content-2");
+        requested.setToolInput("{\"city\":\"London\"}");
+
+        AgentToolCallHistoryEvent completed = new AgentToolCallHistoryEvent();
+        completed.setToolCallId("call-content-2");
+        completed.setStatus("COMPLETED");
+        completed.setToolOutput("{\"flightId\":\"BA123\"}");
+
+        assertDoesNotThrow(() -> {
+            captureTracing.startSubprocess(subprocessEvent);
+            captureTracing.startLlmCall(request);
+            captureTracing.endLlmCall(response);
+            captureTracing.startToolCall(requested);
+            captureTracing.endToolCall(completed);
+            captureTracing.endSubprocess(subprocessEvent, 1);
+        });
+    }
+
+    private static AgentOtelContentCaptureProperties captureEnabledProperties() {
+        AgentOtelContentCaptureProperties properties = new AgentOtelContentCaptureProperties();
+        properties.setCaptureContent(true);
+        return properties;
     }
 }

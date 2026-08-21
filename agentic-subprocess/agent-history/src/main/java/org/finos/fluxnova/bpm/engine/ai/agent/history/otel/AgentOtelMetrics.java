@@ -44,9 +44,13 @@ import java.util.concurrent.atomic.LongAdder;
  * metrics introduced by the GenAI semantic conventions are emitted alongside them (the spec
  * explicitly allows emitting both): {@code gen_ai.invoke_agent.duration}, {@code
  * gen_ai.invoke_agent.inference_calls}, {@code gen_ai.invoke_agent.tool_calls}, and {@code
- * gen_ai.execute_tool.duration}. The two {@code invoke_agent} call-count histograms are derived
- * from per-subprocess-execution counters that are incremented as {@code chat}/{@code
- * execute_tool} operations are recorded and flushed (and cleared) when the subprocess ends.</p>
+ * gen_ai.execute_tool.duration}. {@code gen_ai.invoke_agent.inference_calls} is recorded directly
+ * from {@code AgentSubprocessHistoryEvent.getIterationCount()} — the authoritative agent-loop-turn
+ * counter already tracked by {@code AgentStateManager} (the {@code _agentLoopIndex} execution
+ * variable) and populated by {@code AgentOrchestrationJobHandler} — rather than derived from a
+ * "one chat call per loop turn" assumption. {@code gen_ai.invoke_agent.tool_calls} is still
+ * derived from a per-subprocess-execution counter incremented as {@code execute_tool} operations
+ * are recorded and flushed (and cleared) when the subprocess ends.</p>
  *
  * <p>Instruments are created lazily on first use rather than at construction time: {@link
  * AgentHistoryEventHandler} (and therefore this class) is typically instantiated by the Spring
@@ -82,9 +86,8 @@ public class AgentOtelMetrics {
     private volatile LongHistogram invokeAgentToolCalls;
     private volatile DoubleHistogram executeToolDuration;
 
-    // Per-subprocess-execution counters backing gen_ai.invoke_agent.inference_calls/tool_calls —
-    // scoped to a single agent invocation and flushed (recorded + cleared) when the subprocess ends.
-    private final ConcurrentMap<String, LongAdder> inferenceCallCounts = new ConcurrentHashMap<>();
+    // Per-subprocess-execution counter backing gen_ai.invoke_agent.tool_calls — scoped to a
+    // single agent invocation and flushed (recorded + cleared) when the subprocess ends.
     private final ConcurrentMap<String, LongAdder> toolCallCounts = new ConcurrentHashMap<>();
 
     public void recordLlmCall(AgentLlmHistoryEvent event) {
@@ -92,7 +95,6 @@ public class AgentOtelMetrics {
 
         recordTokenUsage(attributes, event.getPromptTokens(), event.getCompletionTokens());
         recordDuration(attributes, event.getDurationMs());
-        incrementCount(inferenceCallCounts, event.getSubprocessExecutionId());
     }
 
     public void recordToolCall(AgentToolCallHistoryEvent event) {
@@ -123,12 +125,20 @@ public class AgentOtelMetrics {
         incrementCount(toolCallCounts, event.getSubprocessExecutionId());
     }
 
-    public void recordSubprocess(AgentSubprocessHistoryEvent event) {
+    /**
+     * Records the {@code invoke_agent} metrics for one subprocess execution.
+     *
+     * @return the authoritative tool-call count recorded for this execution (0 if the
+     *         subprocess ended before it ever started, or if no tool calls were made), so
+     *         callers such as {@link AgentHistoryEventHandler} can pass the exact same value on
+     *         to {@link AgentOtelTracing#endSubprocess(AgentSubprocessHistoryEvent, long)} —
+     *         keeping the {@code invoke_agent} span's {@code gen_ai.invoke_agent.tool_calls}
+     *         attribute consistent with this metric rather than re-derived independently.
+     */
+    public long recordSubprocess(AgentSubprocessHistoryEvent event) {
         if (event.getStartTime() == null || event.getEndTime() == null) {
             // Subprocess ended before it ever started (e.g. empty tool catalogue) — nothing to record.
-            clearCount(inferenceCallCounts, event.getSubprocessExecutionId());
-            clearCount(toolCallCounts, event.getSubprocessExecutionId());
-            return;
+            return clearCount(toolCallCounts, event.getSubprocessExecutionId());
         }
 
         Attributes attributes = attributes(OPERATION_INVOKE_AGENT, event.getProvider(), event.getModel());
@@ -146,10 +156,13 @@ public class AgentOtelMetrics {
 
         recordDuration(invokeAgentDuration(), agentAttributes, durationMs);
 
-        long inferenceCalls = clearCount(inferenceCallCounts, event.getSubprocessExecutionId());
+        // gen_ai.invoke_agent.inference_calls uses the authoritative loop-turn counter
+        // (AgentSubprocessHistoryEvent.iterationCount, sourced from AgentStateManager's
+        // _agentLoopIndex execution variable) rather than a derived "1 chat call per turn" count.
         long toolCalls = clearCount(toolCallCounts, event.getSubprocessExecutionId());
-        invokeAgentInferenceCalls().record(inferenceCalls, agentAttributes);
+        invokeAgentInferenceCalls().record(event.getIterationCount(), agentAttributes);
         invokeAgentToolCalls().record(toolCalls, agentAttributes);
+        return toolCalls;
     }
 
     private void recordTokenUsage(Attributes baseAttributes, long inputTokens, long outputTokens) {

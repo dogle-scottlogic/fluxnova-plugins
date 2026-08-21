@@ -2,10 +2,12 @@ package org.finos.fluxnova.bpm.engine.ai.agent.history.autoconfigure;
 
 import org.finos.fluxnova.bpm.engine.ai.agent.history.handler.AgentHistoryEnginePlugin;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.handler.AgentHistoryEventHandler;
+import org.finos.fluxnova.bpm.engine.ai.agent.history.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.query.AgentHistoryQuery;
 import org.finos.fluxnova.bpm.engine.ai.agent.history.rest.AgentHistoryRestController;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -27,14 +29,22 @@ import javax.sql.DataSource;
  * {@link org.springframework.jdbc.datasource.init.ResourceDatabasePopulator} inside
  * {@link AgentHistoryEnginePlugin#postProcessEngineBuild} — the same approach as the engine
  * itself, requiring no external migration tool.
+ *
+ * <p>Binds {@link AgentOtelContentCaptureProperties} ({@code fluxnova.ai.agent.observability.*})
+ * and passes it through to {@link AgentHistoryEventHandler}, which controls whether the
+ * potentially-sensitive {@code gen_ai.input.messages}/{@code .output.messages}/{@code
+ * system_instructions}/{@code tool.call.*} span attributes are captured — opt-in, disabled by
+ * default.
  */
 @AutoConfiguration
+@EnableConfigurationProperties(AgentOtelContentCaptureProperties.class)
 public class AgentHistoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentHistoryEventHandler agentHistoryEventHandler(DataSource dataSource) {
-        return new AgentHistoryEventHandler(new JdbcTemplate(dataSource));
+    public AgentHistoryEventHandler agentHistoryEventHandler(DataSource dataSource,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
+        return new AgentHistoryEventHandler(new JdbcTemplate(dataSource), contentCaptureProperties);
     }
 
     @Bean
