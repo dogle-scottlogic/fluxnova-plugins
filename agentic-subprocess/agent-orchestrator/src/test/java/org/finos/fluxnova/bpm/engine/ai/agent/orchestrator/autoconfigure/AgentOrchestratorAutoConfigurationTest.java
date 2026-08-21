@@ -4,6 +4,8 @@ import org.finos.fluxnova.bpm.engine.RuntimeService;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine.AdHocAgentOrchestrationParseListener;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine.AgentOrchestratorEnginePlugin;
@@ -16,7 +18,6 @@ import org.finos.fluxnova.bpm.engine.ai.agent.service.ToolInvocationService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManager;
 import org.finos.fluxnova.bpm.engine.ai.agent.registry.AgentConfigRegistry;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -62,6 +63,16 @@ class AgentOrchestratorAutoConfigurationTest {
         AgentContextResolver agentContextResolver() {
             return mock(AgentContextResolver.class);
         }
+
+        @Bean
+        AgentOtelMetrics agentOtelMetrics() {
+            return mock(AgentOtelMetrics.class);
+        }
+
+        @Bean
+        AgentOtelTracing agentOtelTracing() {
+            return mock(AgentOtelTracing.class);
+        }
     }
 
     @Configuration
@@ -99,6 +110,16 @@ class AgentOrchestratorAutoConfigurationTest {
         @Bean
         AgentContextResolver agentContextResolver() {
             return mock(AgentContextResolver.class);
+        }
+
+        @Bean
+        AgentOtelMetrics agentOtelMetrics() {
+            return mock(AgentOtelMetrics.class);
+        }
+
+        @Bean
+        AgentOtelTracing agentOtelTracing() {
+            return mock(AgentOtelTracing.class);
         }
 
         @Bean

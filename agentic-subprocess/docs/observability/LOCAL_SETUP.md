@@ -19,8 +19,8 @@ mvn clean install -DskipTests
 ```
 
 This installs `org.finos.fluxnova.bpm:fluxnova-engine-plugins-ai-agentic-subprocess`
-(and its submodules — `agent-config`, `agent-history`, `agent-llm-connector`,
-`agent-orchestrator`, etc.) into your local `~/.m2` repository. `agent-history`
+(and its submodules — `agent-config`, `agent-otel`, `agent-llm-connector`,
+`agent-orchestrator`, etc.) into your local `~/.m2` repository. `agent-otel`
 is the module that contains `AgentOtelMetrics`/`AgentOtelTracing` — the
 instrumentation being verified.
 
@@ -84,9 +84,8 @@ process-engine-plugins:
       metricExportIntervalMillis: 5000
 ```
 
-Confirm on startup (see step 8) that both `AgentHistoryEnginePlugin` and
-`OpenTelemetryProcessEnginePlugin` activate cleanly and `RUN-CR001` shows
-`OpenTelemetryProcessEnginePlugin` in the activated plugin list.
+Confirm on startup (see step 8) that `OpenTelemetryProcessEnginePlugin`
+activates cleanly and `RUN-CR001` shows it in the activated plugin list.
 
 ## 4. Run an OTel Collector locally
 
@@ -213,8 +212,7 @@ cd C:\dev\fluxnova-bpm-platform\local
 Check the startup log for:
 
 ```
-... AgentHistoryEnginePlugin ... Agent history schema initialised ...
-... ENGINE-12003 Plugin 'CompositeProcessEnginePlugin[...AgentHistoryEnginePlugin, ..., OpenTelemetryProcessEnginePlugin]' activated ...
+... ENGINE-12003 Plugin 'CompositeProcessEnginePlugin[..., OpenTelemetryProcessEnginePlugin]' activated ...
 ```
 
 Then trigger a process instance containing an ad hoc agent subprocess (via
@@ -278,4 +276,3 @@ self-observability metrics scraped into Prometheus:
    endpoint/path/headers are correct. A `404` usually means a doubled
    `/v1/traces/v1/traces` path — use `traces_endpoint` (not `endpoint`) in
    the collector's `otlphttp` exporter config.
-

@@ -18,8 +18,49 @@
   <dependencies>
     <dependency>
       <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-shared</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-ai-agent-config</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-ai-agent-tool-context-discovery</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-ai-agent-llm-connector</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-ai-agentic-tool-invocation</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
       <artifactId>fluxnova-engine-plugins-ai-agent-orchestrator</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugins-ai-agent-otel</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.finos.fluxnova.bpm</groupId>
+      <artifactId>fluxnova-engine-plugin-otel</artifactId>
+      <scope>test</scope>
     </dependency>
 
     <dependency>

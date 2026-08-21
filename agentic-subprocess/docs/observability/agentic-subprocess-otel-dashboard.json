@@ -1,0 +1,289 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus (or Prometheus-compatible, e.g. Mimir) datasource scraping the OTLP metrics exported by fluxnova-engine-plugin-otel.",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "title": "Agentic Subprocess - GenAI OTEL Metrics",
+  "description": "Dashboard for the gen_ai.client.operation.duration and gen_ai.client.token.usage instruments emitted by agentic-subprocess (agent-otel/AgentOtelMetrics) via fluxnova-engine-plugin-otel. Assumes standard OTel->Prometheus naming: dots become underscores and histograms get _bucket/_sum/_count suffixes (adjust the 'metric_prefix' variable below if your collector/exporter renames things, e.g. adds a namespace or strips units).",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": ["agentic-subprocess", "genai", "otel"],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      },
+      {
+        "name": "metric_prefix",
+        "type": "textbox",
+        "label": "Metric prefix",
+        "description": "Prefix applied by your collector before gen_ai_client_..., e.g. leave blank, or set to something like otel_ if namespaced.",
+        "current": { "text": "", "value": "" },
+        "query": ""
+      },
+      {
+        "name": "provider",
+        "type": "query",
+        "label": "GenAI provider",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(${metric_prefix}gen_ai_client_operation_duration_seconds_count, gen_ai_provider_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "model",
+        "type": "query",
+        "label": "Model",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_provider_name=~\"$provider\"}, gen_ai_request_model)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "LLM Calls / sec (chat)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m]))",
+          "legendFormat": "chat"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tool Calls / sec",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\"}[5m]))",
+          "legendFormat": "execute_tool"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tool Call Error Rate",
+      "description": "Fraction of tool call spans/metrics recorded with error.type set (i.e. failed tool calls).",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\",error_type=\"tool_error\"}[5m])) / sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\"}[5m]))",
+          "legendFormat": "error rate"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Agent (Subprocess) Invocations / sec",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"invoke_agent\"}[5m]))",
+          "legendFormat": "invoke_agent"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Operation Duration",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "LLM Call Duration (p50 / p95 / p99) - chat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Tool Execution Duration (p95) by tool",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"execute_tool\"}[5m])) by (le, gen_ai_tool_name))",
+          "legendFormat": "p95 {{gen_ai_tool_name}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Agent (Subprocess) Duration (p50 / p95 / p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Average Duration by Operation",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_sum[5m])) by (gen_ai_operation_name) / sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count[5m])) by (gen_ai_operation_name)",
+          "legendFormat": "{{gen_ai_operation_name}}"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Token Usage",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Token Throughput (input vs output)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(${metric_prefix}gen_ai_client_token_usage_sum{gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (gen_ai_token_type)",
+          "legendFormat": "{{gen_ai_token_type}} tokens/sec"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "piechart",
+      "title": "Token Usage Share (last 1h) - input vs output",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(increase(${metric_prefix}gen_ai_client_token_usage_sum[1h])) by (gen_ai_token_type)",
+          "legendFormat": "{{gen_ai_token_type}}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Token Usage by Model / Provider (last 1h total)",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(increase(${metric_prefix}gen_ai_client_token_usage_sum[1h])) by (gen_ai_provider_name, gen_ai_request_model, gen_ai_token_type)",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}

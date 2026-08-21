@@ -22,7 +22,7 @@ dashboard schema your instance uses:
   wrapper — paste only this content into that editor, or create a blank
   dashboard first and paste this in via JSON Model, then Save).
 
-Both visualise the two instruments emitted by `AgentOtelMetrics` (agent-history
+Both visualise the two instruments emitted by `AgentOtelMetrics` (agent-otel
 module):
 
 - `gen_ai.client.operation.duration` (histogram, seconds) — tagged with

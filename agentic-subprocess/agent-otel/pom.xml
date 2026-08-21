@@ -9,34 +9,14 @@
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
-    <artifactId>fluxnova-engine-plugins-ai-agent-orchestrator</artifactId>
+    <artifactId>fluxnova-engine-plugins-ai-agent-otel</artifactId>
     <packaging>jar</packaging>
-    <name>Fluxnova Platform - engine plugins - ai - agent orchestrator</name>
-    <description>Orchestrates the agentic subprocess loop: LLM calls, tool dispatch, result feedback</description>
+    <name>Fluxnova Platform - engine plugins - ai - agent otel</name>
+    <description>Emits OpenTelemetry gen_ai.* metrics and traces for agent subprocess executions</description>
     <dependencies>
         <dependency>
             <groupId>org.finos.fluxnova.bpm</groupId>
             <artifactId>fluxnova-engine-plugins-shared</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agent-config</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agent-tool-context-discovery</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agentic-tool-invocation</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agent-otel</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -67,6 +47,11 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -83,15 +68,25 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agent-llm-connector</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-            <scope>compile</scope>
-        </dependency>
     </dependencies>
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.46</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>

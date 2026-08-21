@@ -1,6 +1,6 @@
 {
   "title": "Agentic Subprocess - GenAI OTEL Metrics",
-  "description": "Dashboard for the gen_ai.client.operation.duration and gen_ai.client.token.usage instruments emitted by agentic-subprocess (agent-history/otel/AgentOtelMetrics) via fluxnova-engine-plugin-otel. Targets Prometheus (or a Prometheus-compatible store) reached via an OTel Collector. Assumes standard OTel->Prometheus naming (dots -> underscores, unit appended, _bucket/_sum/_count suffixes on histograms) - adjust the 'metric_prefix' variable, or the queries directly, if your collector renames metrics.",
+  "description": "Dashboard for the gen_ai.client.operation.duration and gen_ai.client.token.usage instruments emitted by agentic-subprocess (agent-otel/AgentOtelMetrics) via fluxnova-engine-plugin-otel. Targets Prometheus (or a Prometheus-compatible store) reached via an OTel Collector. Assumes standard OTel->Prometheus naming (dots -> underscores, unit appended, _bucket/_sum/_count suffixes on histograms) - adjust the 'metric_prefix' variable, or the queries directly, if your collector renames metrics.",
   "tags": ["agentic-subprocess", "genai", "otel"],
   "editable": true,
   "liveNow": false,

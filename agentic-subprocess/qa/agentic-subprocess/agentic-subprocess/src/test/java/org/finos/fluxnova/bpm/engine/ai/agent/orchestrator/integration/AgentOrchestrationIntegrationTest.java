@@ -108,7 +108,8 @@ class AgentOrchestrationIntegrationTest {
 
         Execution adHocExec = adHocExecution(processInstance);
         assertThat(adHocExec).isNotNull();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-1")).isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-1"))
+                .isTrue();
 
         // The tool activity (service task) runs and completes synchronously.
         // SubprocessToolCompletionListener fires and creates the next orchestration job.
@@ -171,8 +172,10 @@ class AgentOrchestrationIntegrationTest {
 
         Execution adHocExec = adHocExecution(processInstance);
         assertThat(adHocExec).isNotNull();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-1")).isTrue();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-2")).isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-1"))
+                .isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-2"))
+                .isTrue();
 
         // Both tool activities run. Each completion fires a tool-completion job.
         // The first tool-completion job removes its ID from pending but doesn't

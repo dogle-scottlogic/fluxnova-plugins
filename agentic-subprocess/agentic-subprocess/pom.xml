@@ -46,7 +46,7 @@
         </dependency>
         <dependency>
             <groupId>org.finos.fluxnova.bpm</groupId>
-            <artifactId>fluxnova-engine-plugins-ai-agent-history</artifactId>
+            <artifactId>fluxnova-engine-plugins-ai-agent-otel</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>
