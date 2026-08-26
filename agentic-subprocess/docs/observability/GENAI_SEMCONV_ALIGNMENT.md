@@ -261,7 +261,19 @@ attributes, not on any backend-specific API.
   the exact per-run counts directly off the span, instead of counting `chat`/`execute_tool` child
   spans, which would reintroduce the "1 chat call ≈ 1 loop turn" proxy assumption the metric-side
   fix was designed to eliminate), `gen_ai.system_instructions` (the subprocess goal —
-  **opt-in**, see [Content capture](#content-capture-opt-in) below).
+  **opt-in**, see [Content capture](#content-capture-opt-in) below), `gen_ai.input.messages`
+  (the resolved subprocess input variables, set at span start from the same JSON payload
+  `AgentOrchestrationJobHandler.startSubprocessObservability(...)` resolves via
+  `AgentContextResolver` — **opt-in**), `gen_ai.output.messages` (the agent's final assistant
+  response text, set at span end from `LlmResponse.assistantText()` on the terminating LLM call
+  — **opt-in**; absent when the subprocess terminates before any LLM call completes, e.g. an
+  empty tool catalogue).
+  Backends that derive a trace's request/response purely from these two generic
+  `gen_ai.input.messages`/`gen_ai.output.messages` attributes (e.g. MLflow's GenAI semconv trace
+  ingestion, which otherwise only sees them on child `chat` spans) can now render them for the
+  root `invoke_agent` span too — previously only `gen_ai.system_instructions` was set on the
+  input side and nothing at all on the output side, so MLflow's trace-list Request/Response
+  columns showed `null` for every trace regardless of content-capture settings.
 - **Lifecycle:** started on `AgentOrchestrationJobHandler.startSubprocessObservability(...)`,
   ended on `AgentOrchestrationJobHandler.endSubprocessObservability(...)`.
 

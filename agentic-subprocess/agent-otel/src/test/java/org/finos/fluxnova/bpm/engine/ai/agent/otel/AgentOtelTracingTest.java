@@ -22,13 +22,13 @@ class AgentOtelTracingTest {
         assertDoesNotThrow(() -> {
             tracing.startSubprocess("exec-1", "Activity_agent", "proc-1", "openai", "gpt-4o",
                     "goal", "{\"customerId\":\"C123\"}");
-            tracing.endSubprocess("exec-1", 10, 5, 1, 2);
+            tracing.endSubprocess("exec-1", 10, 5, 1, 2, "done");
         });
     }
 
     @Test
     void subprocessSpan_endWithoutStart_isNoOp() {
-        assertDoesNotThrow(() -> tracing.endSubprocess("exec-orphan", 0, 0, 0, 0));
+        assertDoesNotThrow(() -> tracing.endSubprocess("exec-orphan", 0, 0, 0, 0, null));
     }
 
     @Test
@@ -73,7 +73,7 @@ class AgentOtelTracingTest {
                     "Activity_lookup", null, "{\"city\":\"London\"}");
             tracing.endToolCall("call-content-1", "Activity_lookup", null, false, null,
                     "{\"flightId\":\"BA123\"}");
-            tracing.endSubprocess("exec-content-1", 0, 0, 1, 1);
+            tracing.endSubprocess("exec-content-1", 0, 0, 1, 1, "Booked flight BA123");
         });
     }
 
@@ -92,7 +92,7 @@ class AgentOtelTracingTest {
                     "Activity_lookup", null, "{\"city\":\"London\"}");
             captureTracing.endToolCall("call-content-2", "Activity_lookup", null, false, null,
                     "{\"flightId\":\"BA123\"}");
-            captureTracing.endSubprocess("exec-content-2", 0, 0, 1, 1);
+            captureTracing.endSubprocess("exec-content-2", 0, 0, 1, 1, "Booked flight BA123");
         });
     }
 

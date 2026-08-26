@@ -182,7 +182,7 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                     "Tool catalogue is empty for activity '{}' in process '{}', terminating execution '{}'",
                     execution.getActivityId(), execution.getProcessDefinitionId(),
                     scopeExecutionId);
-            endSubprocessObservability(execution, agentConfig);
+            endSubprocessObservability(execution, agentConfig, null);
             agentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
@@ -226,7 +226,7 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         if (response.toolCalls().isEmpty()) {
             LOG.debug("No tool calls returned, triggering termination for scope '{}'",
                     scopeExecutionId);
-            endSubprocessObservability(execution, agentConfig);
+            endSubprocessObservability(execution, agentConfig, response.assistantText());
             agentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
@@ -313,7 +313,8 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                 agentConfig.systemPrompt(), inputVariablesJson);
     }
 
-    private void endSubprocessObservability(ExecutionEntity execution, AgentConfig agentConfig) {
+    private void endSubprocessObservability(ExecutionEntity execution, AgentConfig agentConfig,
+            String finalOutput) {
         String scopeExecutionId = execution.getId();
         RuntimeService runtimeService = execution.getProcessEngineServices().getRuntimeService();
         Instant startTime = stateManager.getStartTime(runtimeService, scopeExecutionId);
@@ -327,7 +328,7 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                 execution.getActivityId(), agentConfig.provider(), agentConfig.model(),
                 iterationCount, startTime, endTime, totalPromptTokens, totalCompletionTokens);
         otelTracing.endSubprocess(scopeExecutionId, totalPromptTokens, totalCompletionTokens,
-                iterationCount, toolCallCount);
+                iterationCount, toolCallCount, finalOutput);
     }
 
     private String serializePromptMessages(ExecutionEntity execution, AgentConfig agentConfig,

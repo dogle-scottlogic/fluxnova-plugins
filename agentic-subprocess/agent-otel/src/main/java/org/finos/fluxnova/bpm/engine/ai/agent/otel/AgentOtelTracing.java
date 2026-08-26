@@ -131,6 +131,8 @@ public class AgentOtelTracing {
                 .setAttribute(CONVERSATION_ID, nullToUnknown(processInstanceId));
         if (captureContent()) {
             putIfPresent(builder, SYSTEM_INSTRUCTIONS, goal);
+            putIfPresent(builder, SYSTEM_INSTRUCTIONS, goal);
+            putIfPresent(builder, INPUT_MESSAGES, inputVariables);
         }
         safePut(subprocessSpans, subprocessExecutionId, builder.startSpan());
     }
@@ -142,9 +144,17 @@ public class AgentOtelTracing {
      *                      {@link AgentOtelMetrics#recordSubprocess(String, String, String, String,
      *                      int, java.time.Instant, java.time.Instant, long, long)} (the
      *                      metric-side call MUST happen first and its return value passed here).
+     * @param finalOutput   the agent's final assistant response text, if one was produced before
+     *                      termination (e.g. {@code null} when the subprocess was terminated
+     *                      before any LLM call completed, such as an empty tool catalogue).
+     *                      Recorded as the span's {@code gen_ai.output.messages} attribute, gated
+     *                      behind content-capture, so backends that derive a span's
+     *                      "response"/output purely from that attribute (e.g. MLflow's GenAI
+     *                      semconv trace ingestion) can render it for this invoke_agent span too.
      */
     public void endSubprocess(String subprocessExecutionId, long totalPromptTokens,
-            long totalCompletionTokens, int iterationCount, long toolCallCount) {
+            long totalCompletionTokens, int iterationCount, long toolCallCount,
+            String finalOutput) {
         Span span = safeRemove(subprocessSpans, subprocessExecutionId);
         if (span == null) {
             return;
@@ -157,6 +167,9 @@ public class AgentOtelTracing {
         }
         span.setAttribute(INVOKE_AGENT_INFERENCE_CALLS, (long) iterationCount);
         span.setAttribute(INVOKE_AGENT_TOOL_CALLS, toolCallCount);
+        if (captureContent()) {
+            putIfPresent(span, OUTPUT_MESSAGES, finalOutput);
+        }
         span.setStatus(StatusCode.OK);
         span.end();
     }

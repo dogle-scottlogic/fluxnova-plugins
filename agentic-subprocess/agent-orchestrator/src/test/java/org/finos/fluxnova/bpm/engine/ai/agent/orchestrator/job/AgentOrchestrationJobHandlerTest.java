@@ -245,7 +245,7 @@ class AgentOrchestrationJobHandlerTest {
             verifyNoInteractions(toolInvocationService);
             verify(otelMetrics).recordSubprocess(eq(SCOPE_EXECUTION_ID), eq(ELEMENT_ID),
                     eq("ollama"), eq("llama3"), eq(1), isNull(), any(), eq(0L), eq(0L));
-            verify(otelTracing).endSubprocess(SCOPE_EXECUTION_ID, 0L, 0L, 1, 0L);
+            verify(otelTracing).endSubprocess(SCOPE_EXECUTION_ID, 0L, 0L, 1, 0L, "All done!");
         }
 
         @Test
