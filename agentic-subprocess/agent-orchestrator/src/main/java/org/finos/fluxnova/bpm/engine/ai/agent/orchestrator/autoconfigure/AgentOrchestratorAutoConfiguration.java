@@ -6,6 +6,7 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.autoconfigure.AgentDisco
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.autoconfigure.AgentLlmOrchestratorAutoConfiguration;
@@ -48,8 +49,10 @@ public class AgentOrchestratorAutoConfiguration {
     @ConditionalOnMissingBean
     public SubprocessToolCompletionListener subprocessToolCompletionListener(
             AgentStateManager stateManager, AgentOtelMetrics otelMetrics,
-            AgentOtelTracing otelTracing) {
-        return new SubprocessToolCompletionListener(stateManager, otelMetrics, otelTracing);
+            AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
+        return new SubprocessToolCompletionListener(stateManager, otelMetrics, otelTracing,
+                contentCaptureProperties);
     }
 
     @Bean
@@ -70,7 +73,8 @@ public class AgentOrchestratorAutoConfiguration {
             AgentStateManager stateManager,
             AgentTerminationHandler scopeCompleter,
             AgentOtelMetrics otelMetrics,
-            AgentOtelTracing otelTracing) {
+            AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         return new AgentOrchestrationJobHandler(
                 agentConfigRegistry,
                 toolCatalogueRegistry,
@@ -81,7 +85,8 @@ public class AgentOrchestratorAutoConfiguration {
                 stateManager,
                 scopeCompleter,
                 otelMetrics,
-                otelTracing
+                otelTracing,
+                contentCaptureProperties
         );
     }
 

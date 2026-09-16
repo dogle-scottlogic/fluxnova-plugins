@@ -10,6 +10,7 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.extract.BpmnExtensionCon
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.extract.AgentConfigExtractor;
@@ -140,11 +141,17 @@ public class TestConfig {
     }
 
     @Bean
+    public AgentOtelContentCaptureProperties agentOtelContentCaptureProperties() {
+        return new AgentOtelContentCaptureProperties();
+    }
+
+    @Bean
     public SubprocessToolCompletionListener subprocessToolCompletionListener(
             AgentStateManager stateManager, AgentOtelMetrics agentOtelMetrics,
-            AgentOtelTracing agentOtelTracing) {
+            AgentOtelTracing agentOtelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         return new SubprocessToolCompletionListener(stateManager, agentOtelMetrics,
-                agentOtelTracing);
+                agentOtelTracing, contentCaptureProperties);
     }
 
     @Bean
@@ -181,11 +188,13 @@ public class TestConfig {
             LlmService llmOrchestrationService,
             ToolInvocationService toolInvocationService, AgentStateManager stateManager,
             AgentTerminationHandler terminationHandler, AgentOtelMetrics agentOtelMetrics,
-            AgentOtelTracing agentOtelTracing) {
+            AgentOtelTracing agentOtelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         AgentOrchestrationJobHandler handler = new AgentOrchestrationJobHandler(configRegistry,
                 toolCatalogueRegistry, contextSpecRegistry, contextResolver,
                 llmOrchestrationService, toolInvocationService, stateManager,
-                terminationHandler, agentOtelMetrics, agentOtelTracing);
+                terminationHandler, agentOtelMetrics, agentOtelTracing,
+                contentCaptureProperties);
         return new AbstractProcessEnginePlugin() {
             @Override
             public void preInit(ProcessEngineConfigurationImpl config) {

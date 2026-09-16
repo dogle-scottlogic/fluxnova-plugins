@@ -1,9 +1,15 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.finos.fluxnova.bpm.engine.RuntimeService;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.job.AgentOrchestrationJobHandler;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.AgentOrchestrationConfig;
+import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolCallHistoryEntry;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolResult;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManager;
 import org.finos.fluxnova.bpm.engine.delegate.DelegateExecution;
@@ -22,15 +28,20 @@ public class SubprocessToolCompletionListener implements ExecutionListener {
     private static final Logger LOG =
             LoggerFactory.getLogger(SubprocessToolCompletionListener.class);
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final AgentStateManager stateManager;
     private final AgentOtelMetrics otelMetrics;
     private final AgentOtelTracing otelTracing;
+    private final AgentOtelContentCaptureProperties contentCaptureProperties;
 
     public SubprocessToolCompletionListener(AgentStateManager stateManager,
-            AgentOtelMetrics otelMetrics, AgentOtelTracing otelTracing) {
+            AgentOtelMetrics otelMetrics, AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         this.stateManager = stateManager;
         this.otelMetrics = otelMetrics;
         this.otelTracing = otelTracing;
+        this.contentCaptureProperties = contentCaptureProperties;
     }
 
     @Override
@@ -82,5 +93,31 @@ public class SubprocessToolCompletionListener implements ExecutionListener {
                 toolElementId, toolName, failed, durationMs);
         otelTracing.endToolCall(toolCallId, toolElementId, toolName, failed, errorMessage,
                 toolOutput);
+
+        RuntimeService runtimeService = scope.getProcessEngineServices().getRuntimeService();
+        String effectiveToolName = toolName != null && !toolName.isBlank() ? toolName : toolElementId;
+        JsonNode arguments = null;
+        if (contentCaptureProperties.isCaptureContent()) {
+            String argumentsJson =
+                    stateManager.getToolCallArguments(runtimeService, scope.getId(), toolCallId);
+            arguments = parseArguments(argumentsJson, toolCallId);
+        }
+        stateManager.appendToolCallHistory(runtimeService, scope.getId(),
+                new ToolCallHistoryEntry(effectiveToolName,
+                        failed ? ToolCallHistoryEntry.STATUS_ERROR : ToolCallHistoryEntry.STATUS_OK,
+                        arguments));
+    }
+
+    private JsonNode parseArguments(String argumentsJson, String toolCallId) {
+        if (argumentsJson == null) {
+            return null;
+        }
+        try {
+            return MAPPER.readTree(argumentsJson);
+        } catch (JsonProcessingException e) {
+            LOG.warn("Failed to parse tool-call arguments for call '{}': {}", toolCallId,
+                    e.getMessage());
+            return null;
+        }
     }
 }

@@ -10,6 +10,7 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.model.ResolvedContext;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
@@ -87,13 +88,15 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
     private final AgentTerminationHandler agentTerminationHandler;
     private final AgentOtelMetrics otelMetrics;
     private final AgentOtelTracing otelTracing;
+    private final AgentOtelContentCaptureProperties contentCaptureProperties;
 
     public AgentOrchestrationJobHandler(AgentConfigRegistry agentConfigRegistry,
             AgentToolCatalogueRegistry toolCatalogueRegistry,
             AgentContextSpecRegistry contextSpecRegistry, AgentContextResolver contextResolver,
             LlmService llmService, ToolInvocationService toolInvocationService,
             AgentStateManager stateManager, AgentTerminationHandler agentTerminationHandler,
-            AgentOtelMetrics otelMetrics, AgentOtelTracing otelTracing) {
+            AgentOtelMetrics otelMetrics, AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         this.agentConfigRegistry = agentConfigRegistry;
         this.toolCatalogueRegistry = toolCatalogueRegistry;
         this.contextSpecRegistry = contextSpecRegistry;
@@ -104,6 +107,7 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         this.agentTerminationHandler = agentTerminationHandler;
         this.otelMetrics = otelMetrics;
         this.otelTracing = otelTracing;
+        this.contentCaptureProperties = contentCaptureProperties;
     }
 
     @Override
@@ -235,6 +239,10 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         for (ToolCallRequest tc : response.toolCalls()) {
             stateManager.recordToolRequestTime(runtimeService, scopeExecutionId, tc.toolCallId(),
                     toolRequestTime);
+            if (contentCaptureProperties.isCaptureContent()) {
+                stateManager.recordToolCallArguments(runtimeService, scopeExecutionId,
+                        tc.toolCallId(), tc.arguments());
+            }
             otelTracing.startToolCall(scopeExecutionId, execution.getActivityId(), tc.toolCallId(),
                     tc.toolId(), null, tc.arguments());
         }
@@ -323,6 +331,8 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         long totalCompletionTokens =
                 stateManager.getTotalCompletionTokens(runtimeService, scopeExecutionId);
         Instant endTime = ClockUtil.getCurrentTime().toInstant();
+
+        stateManager.recordIterationCount(runtimeService, scopeExecutionId, iterationCount);
 
         long toolCallCount = otelMetrics.recordSubprocess(scopeExecutionId,
                 execution.getActivityId(), agentConfig.provider(), agentConfig.model(),

@@ -10,6 +10,7 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.model.ResolvedContext;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
@@ -92,6 +93,8 @@ class AgentOrchestrationJobHandlerTest {
     @Mock
     private AgentOtelTracing otelTracing;
     @Mock
+    private AgentOtelContentCaptureProperties contentCaptureProperties;
+    @Mock
     private ExecutionEntity execution;
     @Mock
     private CommandContext commandContext;
@@ -108,7 +111,8 @@ class AgentOrchestrationJobHandlerTest {
     void setUp() {
         handler = new AgentOrchestrationJobHandler(agentConfigRegistry, toolCatalogueRegistry,
                 contextSpecRegistry, contextResolver, llmService, toolInvocationService,
-                stateManager, terminationHandler, otelMetrics, otelTracing);
+                stateManager, terminationHandler, otelMetrics, otelTracing,
+                contentCaptureProperties);
 
         agentConfig = new AgentConfig(PROC_DEF_ID, ELEMENT_ID, "ollama", "llama3",
                 "You are an agent.", ELEMENT_ID);

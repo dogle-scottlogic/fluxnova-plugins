@@ -1,6 +1,9 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.finos.fluxnova.bpm.engine.RuntimeService;
+import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolCallHistoryEntry;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolResult;
 import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.Role;
@@ -366,6 +369,109 @@ class AgentStateManagerTest {
                         assertEquals(2, loaded.size());
                         assertEquals("tool2", loaded.get(0).toolId());
                         assertEquals("tool3", loaded.get(1).toolId());
+                }
+        }
+
+        @Nested
+        class ToolCallArguments {
+
+                @Test
+                void recordToolCallArguments_whenNull_doesNotWrite() {
+                        stateManager.recordToolCallArguments(runtimeService, EXECUTION_ID, "tc1", null);
+
+                        verify(runtimeService, never()).setVariableLocal(eq(EXECUTION_ID),
+                                        eq("_agentPendingToolCallArguments"), any());
+                }
+
+                @Test
+                void recordAndGetToolCallArguments_roundTrips() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID,
+                                        "_agentPendingToolCallArguments")).thenReturn(null);
+
+                        stateManager.recordToolCallArguments(runtimeService, EXECUTION_ID, "tc1",
+                                        "{\"customerId\":\"cust-123\"}");
+
+                        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+                        verify(runtimeService).setVariableLocal(eq(EXECUTION_ID),
+                                        eq("_agentPendingToolCallArguments"), captor.capture());
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID,
+                                        "_agentPendingToolCallArguments")).thenReturn(captor.getValue());
+
+                        assertEquals("{\"customerId\":\"cust-123\"}",
+                                        stateManager.getToolCallArguments(runtimeService, EXECUTION_ID, "tc1"));
+                }
+
+                @Test
+                void getToolCallArguments_whenNotRecorded_returnsNull() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID,
+                                        "_agentPendingToolCallArguments")).thenReturn(null);
+
+                        assertNull(stateManager.getToolCallArguments(runtimeService, EXECUTION_ID, "tc-unknown"));
+                }
+        }
+
+        @Nested
+        class ToolCallHistory {
+
+                @Test
+                void loadToolCallHistory_whenNoVariable_returnsEmptyList() {
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolCallHistory"))
+                                        .thenReturn(null);
+
+                        List<ToolCallHistoryEntry> history =
+                                        stateManager.loadToolCallHistory(runtimeService, EXECUTION_ID);
+
+                        assertTrue(history.isEmpty());
+                }
+
+                @Test
+                void appendToolCallHistory_addsEntriesInOrder() throws Exception {
+                        JsonNode arguments = new ObjectMapper().readTree("{\"customerId\":\"cust-123\"}");
+                        ToolCallHistoryEntry entry1 =
+                                        new ToolCallHistoryEntry("Check Credit Score", ToolCallHistoryEntry.STATUS_OK,
+                                                        arguments);
+                        ToolCallHistoryEntry entry2 = new ToolCallHistoryEntry("Run Fraud Screening",
+                                        ToolCallHistoryEntry.STATUS_ERROR, null);
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolCallHistory"))
+                                        .thenReturn(null);
+                        stateManager.appendToolCallHistory(runtimeService, EXECUTION_ID, entry1);
+
+                        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+                        verify(runtimeService).setVariableLocal(eq(EXECUTION_ID),
+                                        eq("_agentToolCallHistory"), captor.capture());
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolCallHistory"))
+                                        .thenReturn(captor.getValue());
+                        stateManager.appendToolCallHistory(runtimeService, EXECUTION_ID, entry2);
+
+                        verify(runtimeService, times(2)).setVariableLocal(eq(EXECUTION_ID),
+                                        eq("_agentToolCallHistory"), captor.capture());
+
+                        when(runtimeService.getVariableLocal(EXECUTION_ID, "_agentToolCallHistory"))
+                                        .thenReturn(captor.getValue());
+
+                        List<ToolCallHistoryEntry> loaded =
+                                        stateManager.loadToolCallHistory(runtimeService, EXECUTION_ID);
+                        assertEquals(2, loaded.size());
+                        assertEquals("Check Credit Score", loaded.get(0).name());
+                        assertEquals(ToolCallHistoryEntry.STATUS_OK, loaded.get(0).status());
+                        assertEquals("cust-123", loaded.get(0).arguments().get("customerId").asText());
+                        assertEquals("Run Fraud Screening", loaded.get(1).name());
+                        assertEquals(ToolCallHistoryEntry.STATUS_ERROR, loaded.get(1).status());
+                        assertNull(loaded.get(1).arguments());
+                }
+        }
+
+        @Nested
+        class IterationCount {
+
+                @Test
+                void recordIterationCount_persistsToVariable() {
+                        stateManager.recordIterationCount(runtimeService, EXECUTION_ID, 3);
+
+                        verify(runtimeService).setVariableLocal(EXECUTION_ID, "_agentIterationCount", 3);
                 }
         }
 }

@@ -2,6 +2,7 @@ package org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine;
 
 import org.finos.fluxnova.bpm.engine.ProcessEngineServices;
 import org.finos.fluxnova.bpm.engine.RuntimeService;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.job.AgentOrchestrationJobHandler;
@@ -68,11 +69,15 @@ class SubprocessToolCompletionListenerTest {
     @Mock
     private AgentOtelTracing otelTracing;
 
+    @Mock
+    private AgentOtelContentCaptureProperties contentCaptureProperties;
+
     private SubprocessToolCompletionListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new SubprocessToolCompletionListener(stateManager, otelMetrics, otelTracing);
+        listener = new SubprocessToolCompletionListener(stateManager, otelMetrics, otelTracing,
+                contentCaptureProperties);
     }
 
     private void stubToolCallExecution() {

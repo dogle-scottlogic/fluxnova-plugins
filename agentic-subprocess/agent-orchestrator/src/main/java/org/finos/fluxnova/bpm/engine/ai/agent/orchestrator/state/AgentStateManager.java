@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.finos.fluxnova.bpm.engine.RuntimeService;
+import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolCallHistoryEntry;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolResult;
 import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
@@ -32,6 +33,18 @@ import java.util.Set;
  *   <li>{@code _agentToolCallQueue} — tool calls queued for sequential dispatch</li>
  * </ul>
  *
+ * <p>Two additional variables are published as REST-readable process variables (not scoped to
+ * internal orchestration bookkeeping) so that consumers which cannot safely read the trace store
+ * (e.g. an MLflow {@code predict_fn}) can reconstruct the tool-call sequence and iteration count
+ * without needing OTel spans:
+ * <ul>
+ *   <li>{@code _agentToolCallHistory} — the accumulated, chronologically-ordered list of
+ *       {@link ToolCallHistoryEntry}, mirroring the data already carried on {@code execute_tool}
+ *       OTel spans</li>
+ *   <li>{@code _agentIterationCount} — the final inference/loop-iteration count, mirroring
+ *       {@code gen_ai.invoke_agent.inference_calls}</li>
+ * </ul>
+ *
  * <p>The pending-set protocol works as follows: when tools are dispatched,
  * their call ids are saved via {@link #savePendingToolCalls}. As each tool
  * finishes, {@link #completeToolCall} removes it from the pending set and
@@ -51,6 +64,9 @@ public class AgentStateManager {
     private static final String VAR_TOTAL_COMPLETION_TOKENS = "_agentTotalCompletionTokens";
     private static final String VAR_START_TIME_MS = "_agentStartTimeMs";
     private static final String VAR_TOOL_REQUEST_TIMES = "_agentToolRequestTimes";
+    private static final String VAR_TOOL_CALL_ARGUMENTS = "_agentPendingToolCallArguments";
+    private static final String VAR_TOOL_CALL_HISTORY = "_agentToolCallHistory";
+    private static final String VAR_ITERATION_COUNT = "_agentIterationCount";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<List<ConversationEntry>> HISTORY_TYPE =
@@ -64,6 +80,12 @@ public class AgentStateManager {
     private static final TypeReference<List<ToolCallRequest>> QUEUE_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, Long>> TOOL_REQUEST_TIMES_TYPE =
+            new TypeReference<>() {
+            };
+    private static final TypeReference<Map<String, String>> TOOL_CALL_ARGUMENTS_TYPE =
+            new TypeReference<>() {
+            };
+    private static final TypeReference<List<ToolCallHistoryEntry>> TOOL_CALL_HISTORY_TYPE =
             new TypeReference<>() {
             };
 
@@ -347,6 +369,93 @@ public class AgentStateManager {
         Map<String, Long> times = loadToolRequestTimes(runtimeService, executionId);
         Long ms = times.get(toolCallId);
         return ms == null ? null : Instant.ofEpochMilli(ms);
+    }
+
+    /**
+     * Records the JSON-encoded arguments an in-flight tool call was dispatched with, so that
+     * they can be attached to its {@link ToolCallHistoryEntry} once the call completes.
+     *
+     * @param runtimeService the runtime service used to read and write the execution's local variable
+     * @param executionId the scope execution id
+     * @param toolCallId the tool call identifier assigned by the LLM
+     * @param argumentsJson the JSON-encoded arguments, or {@code null} if none were supplied
+     */
+    public void recordToolCallArguments(RuntimeService runtimeService, String executionId,
+            String toolCallId, String argumentsJson) {
+        if (argumentsJson == null) {
+            return;
+        }
+        Map<String, String> arguments = loadToolCallArguments(runtimeService, executionId);
+        arguments.put(toolCallId, argumentsJson);
+        runtimeService.setVariableLocal(executionId, VAR_TOOL_CALL_ARGUMENTS, serialize(arguments));
+    }
+
+    /**
+     * Returns the JSON-encoded arguments recorded for the given tool call, or {@code null} if
+     * none were recorded (no arguments were supplied, or content capture is disabled upstream).
+     *
+     * @param runtimeService the runtime service used to read the execution's local variable
+     * @param executionId the scope execution id
+     * @param toolCallId the tool call identifier
+     * @return the JSON-encoded arguments, or {@code null}
+     */
+    public String getToolCallArguments(RuntimeService runtimeService, String executionId,
+            String toolCallId) {
+        return loadToolCallArguments(runtimeService, executionId).get(toolCallId);
+    }
+
+    /**
+     * Appends a completed tool call to the {@code _agentToolCallHistory} process variable,
+     * preserving chronological order.
+     *
+     * @param runtimeService the runtime service used to read and write the execution's local variable
+     * @param executionId the scope execution id
+     * @param entry the completed tool call to append; must not be {@code null}
+     */
+    public void appendToolCallHistory(RuntimeService runtimeService, String executionId,
+            ToolCallHistoryEntry entry) {
+        List<ToolCallHistoryEntry> history = loadToolCallHistory(runtimeService, executionId);
+        history.add(entry);
+        runtimeService.setVariableLocal(executionId, VAR_TOOL_CALL_HISTORY, serialize(history));
+    }
+
+    /**
+     * Loads the tool call history accumulated so far for the given execution.
+     *
+     * @param runtimeService the runtime service used to read the execution's local variable
+     * @param executionId the scope execution id
+     * @return the tool call history; an empty list if none has been recorded yet
+     */
+    public List<ToolCallHistoryEntry> loadToolCallHistory(RuntimeService runtimeService,
+            String executionId) {
+        String json = (String) runtimeService.getVariableLocal(executionId, VAR_TOOL_CALL_HISTORY);
+        if (json == null) {
+            return new ArrayList<>();
+        }
+        return deserialize(json, TOOL_CALL_HISTORY_TYPE);
+    }
+
+    /**
+     * Publishes the final iteration/inference-call count as the {@code _agentIterationCount}
+     * process variable, mirroring {@code gen_ai.invoke_agent.inference_calls}.
+     *
+     * @param runtimeService the runtime service used to write the execution's local variable
+     * @param executionId the scope execution id
+     * @param iterationCount the final iteration count for this execution
+     */
+    public void recordIterationCount(RuntimeService runtimeService, String executionId,
+            int iterationCount) {
+        runtimeService.setVariableLocal(executionId, VAR_ITERATION_COUNT, iterationCount);
+    }
+
+    private Map<String, String> loadToolCallArguments(RuntimeService runtimeService,
+            String executionId) {
+        String json =
+                (String) runtimeService.getVariableLocal(executionId, VAR_TOOL_CALL_ARGUMENTS);
+        if (json == null) {
+            return new HashMap<>();
+        }
+        return new HashMap<>(deserialize(json, TOOL_CALL_ARGUMENTS_TYPE));
     }
 
     private Map<String, Long> loadToolRequestTimes(RuntimeService runtimeService,
