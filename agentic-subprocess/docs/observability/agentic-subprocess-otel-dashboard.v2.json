@@ -1,0 +1,726 @@
+{
+  "title": "Agentic Subprocess - GenAI OTEL Metrics",
+  "description": "Dashboard for the gen_ai.client.operation.duration and gen_ai.client.token.usage instruments emitted by agentic-subprocess (agent-otel/AgentOtelMetrics) via fluxnova-engine-plugin-otel. Targets Prometheus (or a Prometheus-compatible store) reached via an OTel Collector. Assumes standard OTel->Prometheus naming (dots -> underscores, unit appended, _bucket/_sum/_count suffixes on histograms) - adjust the 'metric_prefix' variable, or the queries directly, if your collector renames metrics.",
+  "tags": ["agentic-subprocess", "genai", "otel"],
+  "editable": true,
+  "liveNow": false,
+  "preload": false,
+  "cursorSync": "Off",
+  "links": [],
+  "annotations": [],
+  "timeSettings": {
+    "timezone": "browser",
+    "from": "now-6h",
+    "to": "now",
+    "autoRefresh": "30s",
+    "autoRefreshIntervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+    "fiscalYearStartMonth": 0,
+    "hideTimepicker": false
+  },
+  "variables": [
+    {
+      "kind": "DatasourceVariable",
+      "spec": {
+        "name": "datasource",
+        "pluginId": "prometheus",
+        "label": "Prometheus datasource",
+        "description": "",
+        "refresh": "onDashboardLoad",
+        "regex": "",
+        "current": { "text": "", "value": "" },
+        "options": [],
+        "multi": false,
+        "includeAll": false,
+        "hide": "dontHide",
+        "skipUrlSync": false,
+        "allowCustomValue": false
+      }
+    },
+    {
+      "kind": "TextVariable",
+      "spec": {
+        "name": "metric_prefix",
+        "label": "Metric prefix",
+        "description": "Prefix applied by your collector before gen_ai_client_..., e.g. leave blank, or set to something like otel_ if namespaced.",
+        "query": "",
+        "current": { "text": "", "value": "" },
+        "hide": "dontHide",
+        "skipUrlSync": false
+      }
+    },
+    {
+      "kind": "QueryVariable",
+      "spec": {
+        "name": "provider",
+        "label": "GenAI provider",
+        "description": "",
+        "query": {
+          "kind": "DataQuery",
+          "group": "prometheus",
+          "version": "v0",
+          "datasource": { "name": "${datasource}" },
+          "spec": {
+            "qryType": 1,
+            "query": "label_values(${metric_prefix}gen_ai_client_operation_duration_seconds_count, gen_ai_provider_name)"
+          }
+        },
+        "regex": "",
+        "sort": "alphabeticalAsc",
+        "refresh": "onDashboardLoad",
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "options": [],
+        "multi": true,
+        "includeAll": true,
+        "hide": "dontHide",
+        "skipUrlSync": false,
+        "allowCustomValue": true
+      }
+    },
+    {
+      "kind": "QueryVariable",
+      "spec": {
+        "name": "model",
+        "label": "Model",
+        "description": "",
+        "query": {
+          "kind": "DataQuery",
+          "group": "prometheus",
+          "version": "v0",
+          "datasource": { "name": "${datasource}" },
+          "spec": {
+            "qryType": 1,
+            "query": "label_values(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_provider_name=~\"$provider\"}, gen_ai_request_model)"
+          }
+        },
+        "regex": "",
+        "sort": "alphabeticalAsc",
+        "refresh": "onDashboardLoad",
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "options": [],
+        "multi": true,
+        "includeAll": true,
+        "hide": "dontHide",
+        "skipUrlSync": false,
+        "allowCustomValue": true
+      }
+    }
+  ],
+  "elements": {
+    "panel-1": {
+      "kind": "Panel",
+      "spec": {
+        "id": 1,
+        "title": "LLM Calls / sec (chat)",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m]))",
+                      "legendFormat": "chat",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-2": {
+      "kind": "Panel",
+      "spec": {
+        "id": 2,
+        "title": "Tool Calls / sec",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\"}[5m]))",
+                      "legendFormat": "execute_tool",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-3": {
+      "kind": "Panel",
+      "spec": {
+        "id": 3,
+        "title": "Tool Call Error Rate",
+        "description": "Fraction of tool call spans/metrics recorded with error.type set (i.e. failed tool calls).",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\",error_type=\"tool_error\"}[5m])) / sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"execute_tool\"}[5m]))",
+                      "legendFormat": "error rate",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "unit": "percentunit",
+                "decimals": 1,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": 0 },
+                    { "color": "orange", "value": 0.05 },
+                    { "color": "red", "value": 0.2 }
+                  ]
+                }
+              },
+              "overrides": []
+            },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-4": {
+      "kind": "Panel",
+      "spec": {
+        "id": 4,
+        "title": "Agent (Subprocess) Invocations / sec",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"invoke_agent\"}[5m]))",
+                      "legendFormat": "invoke_agent",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-10": {
+      "kind": "Panel",
+      "spec": {
+        "id": 10,
+        "title": "LLM Call Duration (p50 / p95 / p99) - chat",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.50, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+                      "legendFormat": "p50",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+                      "legendFormat": "p95",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.99, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\",gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (le))",
+                      "legendFormat": "p99",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-11": {
+      "kind": "Panel",
+      "spec": {
+        "id": 11,
+        "title": "Tool Execution Duration (p95) by tool",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"execute_tool\"}[5m])) by (le, gen_ai_tool_name))",
+                      "legendFormat": "p95 {{gen_ai_tool_name}}",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-12": {
+      "kind": "Panel",
+      "spec": {
+        "id": 12,
+        "title": "Agent (Subprocess) Duration (p50 / p95 / p99)",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.50, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+                      "legendFormat": "p50",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.95, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+                      "legendFormat": "p95",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "histogram_quantile(0.99, sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"invoke_agent\"}[5m])) by (le))",
+                      "legendFormat": "p99",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-13": {
+      "kind": "Panel",
+      "spec": {
+        "id": 13,
+        "title": "Average Duration by Operation",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_sum[5m])) by (gen_ai_operation_name) / sum(rate(${metric_prefix}gen_ai_client_operation_duration_seconds_count[5m])) by (gen_ai_operation_name)",
+                      "legendFormat": "{{gen_ai_operation_name}}",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-20": {
+      "kind": "Panel",
+      "spec": {
+        "id": 20,
+        "title": "Token Throughput (input vs output)",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(rate(${metric_prefix}gen_ai_client_token_usage_sum{gen_ai_provider_name=~\"$provider\",gen_ai_request_model=~\"$model\"}[5m])) by (gen_ai_token_type)",
+                      "legendFormat": "{{gen_ai_token_type}} tokens/sec",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-21": {
+      "kind": "Panel",
+      "spec": {
+        "id": 21,
+        "title": "Token Usage Share (last 1h) - input vs output",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(increase(${metric_prefix}gen_ai_client_token_usage_sum[1h])) by (gen_ai_token_type)",
+                      "legendFormat": "{{gen_ai_token_type}}",
+                      "range": true,
+                      "instant": false
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "piechart",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    },
+    "panel-22": {
+      "kind": "Panel",
+      "spec": {
+        "id": 22,
+        "title": "Token Usage by Model / Provider (last 1h total)",
+        "description": "",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": { "name": "${datasource}" },
+                    "spec": {
+                      "expr": "sum(increase(${metric_prefix}gen_ai_client_token_usage_sum[1h])) by (gen_ai_provider_name, gen_ai_request_model, gen_ai_token_type)",
+                      "format": "table",
+                      "range": false,
+                      "instant": true
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "table",
+          "version": "13.1.1",
+          "spec": {
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": {}
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "kind": "GridLayout",
+    "spec": {
+      "items": [
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-1" }, "x": 0, "y": 0, "width": 6, "height": 4 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-2" }, "x": 6, "y": 0, "width": 6, "height": 4 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-3" }, "x": 12, "y": 0, "width": 6, "height": 4 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-4" }, "x": 18, "y": 0, "width": 6, "height": 4 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-10" }, "x": 0, "y": 4, "width": 12, "height": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-11" }, "x": 12, "y": 4, "width": 12, "height": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-12" }, "x": 0, "y": 12, "width": 12, "height": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-13" }, "x": 12, "y": 12, "width": 12, "height": 8 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-20" }, "x": 0, "y": 20, "width": 12, "height": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-21" }, "x": 12, "y": 20, "width": 6, "height": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-22" }, "x": 18, "y": 20, "width": 6, "height": 8 } }
+      ]
+    }
+  }
+}

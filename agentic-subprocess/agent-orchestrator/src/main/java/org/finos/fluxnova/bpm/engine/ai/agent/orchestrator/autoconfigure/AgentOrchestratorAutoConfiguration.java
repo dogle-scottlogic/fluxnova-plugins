@@ -6,6 +6,9 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.autoconfigure.AgentDisco
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.autoconfigure.AgentLlmOrchestratorAutoConfiguration;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine.AdHocAgentOrchestrationParseListener;
@@ -44,8 +47,12 @@ public class AgentOrchestratorAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubprocessToolCompletionListener subprocessToolCompletionListener() {
-        return new SubprocessToolCompletionListener();
+    public SubprocessToolCompletionListener subprocessToolCompletionListener(
+            AgentStateManager stateManager, AgentOtelMetrics otelMetrics,
+            AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
+        return new SubprocessToolCompletionListener(stateManager, otelMetrics, otelTracing,
+                contentCaptureProperties);
     }
 
     @Bean
@@ -64,7 +71,10 @@ public class AgentOrchestratorAutoConfiguration {
             LlmService llmService,
             ToolInvocationService toolInvocationService,
             AgentStateManager stateManager,
-            AgentTerminationHandler scopeCompleter) {
+            AgentTerminationHandler scopeCompleter,
+            AgentOtelMetrics otelMetrics,
+            AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         return new AgentOrchestrationJobHandler(
                 agentConfigRegistry,
                 toolCatalogueRegistry,
@@ -73,7 +83,10 @@ public class AgentOrchestratorAutoConfiguration {
                 llmService,
                 toolInvocationService,
                 stateManager,
-                scopeCompleter
+                scopeCompleter,
+                otelMetrics,
+                otelTracing,
+                contentCaptureProperties
         );
     }
 

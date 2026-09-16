@@ -9,6 +9,7 @@ Drives the per-turn loop for an agentic subprocess: calls the LLM, dispatches th
 - Fires an asynchronous job on each tool activity completion that feeds the result back and, once all pending tools are done, drives the next turn
 - Manages per-execution agent state (conversation history, pending tool calls, result buffer) as process-local variables
 - Completes the scope when the LLM returns a response with no tool calls
+- Publishes `_agentToolCallHistory` (the chronological tool-call list: name, status, and, when content capture is enabled, arguments) and `_agentIterationCount` (the final loop-iteration count) as process variables alongside `_agentConversationHistory`, so REST-only consumers that cannot safely read the trace store (e.g. an MLflow `predict_fn`) can reconstruct the same data the `execute_tool`/`invoke_agent` OTel spans carry
 
 ## Prerequisites
 

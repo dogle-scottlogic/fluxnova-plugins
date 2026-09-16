@@ -35,12 +35,20 @@ class SpringAiLlmServiceTest {
 
     private final AgentToolSchemaConverter converter = new AgentToolSchemaConverter();
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     private ChatModel mockChatModel(ChatResponse response) {
         ChatModel chatModel = mock(ChatModel.class);
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
-        // Mock getOptions() to return a ChatOptions mock so Spring AI 2.0.0 doesn't throw NPE
+        // Mock getOptions() and its mutate() builder chain so Spring AI 2.0.0 doesn't NPE when
+        // merging per-request ChatOptions (model override) with the chatModel's default options.
+        // DefaultChatClientUtils calls: builder = chatModel.getOptions().mutate(); then
+        // builder = builder.combineWith(optionsCustomizer); then builder.build() — all must return non-null.
         ChatOptions options = mock(ChatOptions.class);
-        when(options.mutate()).thenReturn(mock(ChatOptions.Builder.class));
+        ChatOptions.Builder builder = mock(ChatOptions.Builder.class);
+        when(builder.build()).thenReturn(options);
+        when(builder.model(any())).thenReturn(builder);
+        when(builder.combineWith(any())).thenReturn(builder);
+        when(options.mutate()).thenReturn(builder);
         when(chatModel.getOptions()).thenReturn(options);
         return chatModel;
     }
@@ -82,14 +90,14 @@ class SpringAiLlmServiceTest {
         Prompt prompt = captor.getValue();
 
         List<Message> instructions = prompt.getInstructions();
-        assertThat(instructions).hasSize(3);
+        // System prompt and context are combined into a single system message via spec.system()
+        assertThat(instructions).hasSize(2);
         assertThat(instructions.get(0).getMessageType()).isEqualTo(MessageType.SYSTEM);
-        assertThat(instructions.get(0).getText()).isEqualTo("You are an agent.");
-        // Context now placed before history (not trailing)
-        assertThat(instructions.get(1).getMessageType()).isEqualTo(MessageType.SYSTEM);
-        assertThat(instructions.get(1).getText()).contains("customerId = c-1");
-        assertThat(instructions.get(2).getMessageType()).isEqualTo(MessageType.USER);
-        assertThat(instructions.get(2).getText()).isEqualTo("Run a credit check");
+        assertThat(instructions.get(0).getText())
+                .contains("You are an agent.")
+                .contains("customerId = c-1");
+        assertThat(instructions.get(1).getMessageType()).isEqualTo(MessageType.USER);
+        assertThat(instructions.get(1).getText()).isEqualTo("Run a credit check");
 
         assertThat(response.assistantText()).isEqualTo("Working on it.");
         assertThat(response.toolCalls()).hasSize(1);
@@ -165,13 +173,12 @@ class SpringAiLlmServiceTest {
         verify(chatModel).call(captor.capture());
         Prompt prompt = captor.getValue();
 
-        // [system, context-system, user] — context now before history
+        // System prompt and context are combined into a single system message via spec.system()
         List<Message> instructions = prompt.getInstructions();
-        assertThat(instructions).hasSize(3);
+        assertThat(instructions).hasSize(2);
         assertThat(instructions.get(0).getMessageType()).isEqualTo(MessageType.SYSTEM);
-        assertThat(instructions.get(1).getMessageType()).isEqualTo(MessageType.SYSTEM);
-        assertThat(instructions.get(1).getText()).contains("customerId = c-7");
-        assertThat(instructions.get(2).getMessageType()).isEqualTo(MessageType.USER);
+        assertThat(instructions.get(0).getText()).contains("customerId = c-7");
+        assertThat(instructions.get(1).getMessageType()).isEqualTo(MessageType.USER);
 
         assertThat(response.assistantText()).isEqualTo("Got it.");
     }

@@ -108,7 +108,8 @@ class AgentOrchestrationIntegrationTest {
 
         Execution adHocExec = adHocExecution(processInstance);
         assertThat(adHocExec).isNotNull();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-1")).isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-1"))
+                .isTrue();
 
         // The tool activity (service task) runs and completes synchronously.
         // SubprocessToolCompletionListener fires and creates the next orchestration job.
@@ -171,8 +172,10 @@ class AgentOrchestrationIntegrationTest {
 
         Execution adHocExec = adHocExecution(processInstance);
         assertThat(adHocExec).isNotNull();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-1")).isTrue();
-        assertThat(stateManager.isPendingToolCall(adHocExec.getId(), "call-2")).isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-1"))
+                .isTrue();
+        assertThat(stateManager.isPendingToolCall(runtimeService, adHocExec.getId(), "call-2"))
+                .isTrue();
 
         // Both tool activities run. Each completion fires a tool-completion job.
         // The first tool-completion job removes its ID from pending but doesn't
@@ -295,19 +298,19 @@ class AgentOrchestrationIntegrationTest {
 
     private static LlmResponse doneResponse() {
         return new LlmResponse("", List.of(),
-                List.of(ConversationEntry.assistant("", List.of())));
+                List.of(ConversationEntry.assistant("", List.of())), 0L, 0L);
     }
 
     private static LlmResponse toolCallResponse(String toolCallId, String toolId) {
         List<ToolCallRequest> toolCalls = List.of(new ToolCallRequest(toolCallId, toolId));
         return new LlmResponse(null, toolCalls,
-                List.of(ConversationEntry.assistant(null, toolCalls)));
+                List.of(ConversationEntry.assistant(null, toolCalls)), 0L, 0L);
     }
 
     private static LlmResponse parallelToolCallResponse(ToolCallRequest... requests) {
         List<ToolCallRequest> toolCalls = List.of(requests);
         return new LlmResponse(null, toolCalls,
-                List.of(ConversationEntry.assistant(null, toolCalls)));
+                List.of(ConversationEntry.assistant(null, toolCalls)), 0L, 0L);
     }
 
     // -----------------------------------------------------------------------

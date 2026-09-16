@@ -10,6 +10,9 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.extract.BpmnExtensionCon
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.extract.AgentConfigExtractor;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.engine.AdHocAgentOrchestrationParseListener;
@@ -44,11 +47,8 @@ import java.util.List;
  * by the in-memory Fluxnova engine.
  *
  * <p>
- * Beans that depend on engine services (RuntimeService, RepositoryService) use the
- * {@link org.springframework.beans.factory.ObjectProvider} pattern to break the circular
- * dependency: engine plugins are collected during engine creation, but registries/services need the
- * engine to exist first. ObjectProvider defers resolution until first use (process deployment or
- * job execution), by which time the engine is fully initialised.
+ * Beans that depend on engine services are now self-contained and can be instantiated directly
+ * for these tests; the engine services are resolved at use sites inside the real implementations.
  */
 @TestConfiguration
 public class TestConfig {
@@ -68,9 +68,8 @@ public class TestConfig {
     }
 
     @Bean
-    public AgentConfigRegistry agentConfigRegistry(ObjectProvider<RepositoryService> repositoryService,
-                                                   AgentConfigExtractor extractor) {
-        return new AgentConfigRegistry(repositoryService, extractor);
+    public AgentConfigRegistry agentConfigRegistry(AgentConfigExtractor extractor) {
+        return new AgentConfigRegistry(extractor);
     }
 
     @Bean
@@ -92,20 +91,19 @@ public class TestConfig {
 
     @Bean
     public AgentToolCatalogueRegistry agentToolCatalogueRegistry(
-            ObjectProvider<RepositoryService> repositoryService, AgentConfigRegistry configRegistry,
-            AgentToolCatalogueBuilder builder) {
-        return new AgentToolCatalogueRegistry(repositoryService, configRegistry, builder);
+            AgentConfigRegistry configRegistry, AgentToolCatalogueBuilder builder) {
+        return new AgentToolCatalogueRegistry(configRegistry, builder);
     }
 
     @Bean
-    public AgentContextSpecRegistry agentContextSpecRegistry(ObjectProvider<RepositoryService> repositoryService,
-                                                             AgentConfigRegistry configRegistry, AgentContextSpecBuilder builder) {
-        return new AgentContextSpecRegistry(repositoryService, configRegistry, builder);
+    public AgentContextSpecRegistry agentContextSpecRegistry(AgentConfigRegistry configRegistry,
+                                                             AgentContextSpecBuilder builder) {
+        return new AgentContextSpecRegistry(configRegistry, builder);
     }
 
     @Bean
-    public AgentContextResolver agentContextResolver(ObjectProvider<RuntimeService> runtimeService) {
-        return new AgentContextResolver(runtimeService);
+    public AgentContextResolver agentContextResolver() {
+        return new AgentContextResolver();
     }
 
     // -- agent-tool-invocation plugin --
@@ -116,15 +114,15 @@ public class TestConfig {
     // To be reviewed with final ad-hoc subprocess semantics.
 
     @Bean
-    public ToolInvocationService toolInvocationService(ObjectProvider<RuntimeService> runtimeService) {
-        return new AdHocActivityToolInvocationServiceImpl(runtimeService);
+    public ToolInvocationService toolInvocationService() {
+        return new AdHocActivityToolInvocationServiceImpl();
     }
 
     // -- agent-orchestrator plugin --
 
     @Bean
-    public AgentStateManager agentStateManager(ObjectProvider<RuntimeService> runtimeService) {
-        return new AgentStateManager(runtimeService);
+    public AgentStateManager agentStateManager() {
+        return new AgentStateManager();
     }
 
     @Bean
@@ -133,13 +131,32 @@ public class TestConfig {
     }
 
     @Bean
-    public SubprocessToolCompletionListener subprocessToolCompletionListener() {
-        return new SubprocessToolCompletionListener();
+    public AgentOtelMetrics agentOtelMetrics() {
+        return new AgentOtelMetrics();
     }
 
     @Bean
-    public AgentTerminationHandler agentTerminationHandler(ObjectProvider<RuntimeService> runtimeService) {
-        return new AdHocSubprocessTerminator(runtimeService);
+    public AgentOtelTracing agentOtelTracing() {
+        return new AgentOtelTracing();
+    }
+
+    @Bean
+    public AgentOtelContentCaptureProperties agentOtelContentCaptureProperties() {
+        return new AgentOtelContentCaptureProperties();
+    }
+
+    @Bean
+    public SubprocessToolCompletionListener subprocessToolCompletionListener(
+            AgentStateManager stateManager, AgentOtelMetrics agentOtelMetrics,
+            AgentOtelTracing agentOtelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
+        return new SubprocessToolCompletionListener(stateManager, agentOtelMetrics,
+                agentOtelTracing, contentCaptureProperties);
+    }
+
+    @Bean
+    public AgentTerminationHandler agentTerminationHandler() {
+        return new AdHocSubprocessTerminator();
     }
 
     @Bean
@@ -170,10 +187,14 @@ public class TestConfig {
             AgentContextResolver contextResolver,
             LlmService llmOrchestrationService,
             ToolInvocationService toolInvocationService, AgentStateManager stateManager,
-            AgentTerminationHandler terminationHandler) {
+            AgentTerminationHandler terminationHandler, AgentOtelMetrics agentOtelMetrics,
+            AgentOtelTracing agentOtelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         AgentOrchestrationJobHandler handler = new AgentOrchestrationJobHandler(configRegistry,
                 toolCatalogueRegistry, contextSpecRegistry, contextResolver,
-                llmOrchestrationService, toolInvocationService, stateManager, terminationHandler);
+                llmOrchestrationService, toolInvocationService, stateManager,
+                terminationHandler, agentOtelMetrics, agentOtelTracing,
+                contentCaptureProperties);
         return new AbstractProcessEnginePlugin() {
             @Override
             public void preInit(ProcessEngineConfigurationImpl config) {

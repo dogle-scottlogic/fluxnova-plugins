@@ -22,6 +22,7 @@
         <module>agent-llm-connector</module>
         <module>agent-tool-invocation</module>
         <module>agent-orchestrator</module>
+        <module>agent-otel</module>
         <module>agentic-subprocess</module>
     </modules>
 </project>

@@ -1,5 +1,7 @@
 package org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.job;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.finos.fluxnova.bpm.engine.RepositoryService;
 import org.finos.fluxnova.bpm.engine.RuntimeService;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.model.AgentContextSpec;
@@ -8,19 +10,23 @@ import org.finos.fluxnova.bpm.engine.ai.agent.discovery.model.ResolvedContext;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
 import org.finos.fluxnova.bpm.engine.ai.agent.model.AgentConfig;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.AgentOrchestrationConfig;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.model.ToolResult;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.service.AgentTerminationHandler;
-import org.finos.fluxnova.bpm.engine.ai.agent.service.ToolInvocationService;
 import org.finos.fluxnova.bpm.engine.ai.agent.orchestrator.state.AgentStateManager;
 import org.finos.fluxnova.bpm.engine.ai.agent.registry.AgentConfigRegistry;
+import org.finos.fluxnova.bpm.engine.ai.agent.service.ToolInvocationService;
 import org.finos.fluxnova.bpm.engine.impl.interceptor.CommandContext;
 import org.finos.fluxnova.bpm.engine.impl.jobexecutor.JobHandler;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.JobEntity;
 import org.finos.fluxnova.bpm.engine.impl.persistence.entity.MessageEntity;
+import org.finos.fluxnova.bpm.engine.impl.util.ClockUtil;
 import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.LlmResponse;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
@@ -28,6 +34,8 @@ import org.finos.fluxnova.bpm.engine.shared.model.ToolInvocationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -68,6 +76,8 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
     private static final String INITIAL_USER_PROMPT =
             "Begin. Use the available tools to complete the task, then respond and stop.";
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final AgentConfigRegistry agentConfigRegistry;
     private final AgentToolCatalogueRegistry toolCatalogueRegistry;
     private final AgentContextSpecRegistry contextSpecRegistry;
@@ -75,14 +85,18 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
     private final LlmService llmService;
     private final ToolInvocationService toolInvocationService;
     private final AgentStateManager stateManager;
-    private final AgentTerminationHandler AgentTerminationHandler;
+    private final AgentTerminationHandler agentTerminationHandler;
+    private final AgentOtelMetrics otelMetrics;
+    private final AgentOtelTracing otelTracing;
+    private final AgentOtelContentCaptureProperties contentCaptureProperties;
 
     public AgentOrchestrationJobHandler(AgentConfigRegistry agentConfigRegistry,
             AgentToolCatalogueRegistry toolCatalogueRegistry,
             AgentContextSpecRegistry contextSpecRegistry, AgentContextResolver contextResolver,
-            LlmService llmService,
-            ToolInvocationService toolInvocationService, AgentStateManager stateManager,
-            AgentTerminationHandler AgentTerminationHandler) {
+            LlmService llmService, ToolInvocationService toolInvocationService,
+            AgentStateManager stateManager, AgentTerminationHandler agentTerminationHandler,
+            AgentOtelMetrics otelMetrics, AgentOtelTracing otelTracing,
+            AgentOtelContentCaptureProperties contentCaptureProperties) {
         this.agentConfigRegistry = agentConfigRegistry;
         this.toolCatalogueRegistry = toolCatalogueRegistry;
         this.contextSpecRegistry = contextSpecRegistry;
@@ -90,7 +104,10 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         this.llmService = llmService;
         this.toolInvocationService = toolInvocationService;
         this.stateManager = stateManager;
-        this.AgentTerminationHandler = AgentTerminationHandler;
+        this.agentTerminationHandler = agentTerminationHandler;
+        this.otelMetrics = otelMetrics;
+        this.otelTracing = otelTracing;
+        this.contentCaptureProperties = contentCaptureProperties;
     }
 
     @Override
@@ -102,25 +119,17 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
     public void execute(AgentOrchestrationConfig orchestratorConfig, ExecutionEntity execution,
             CommandContext commandContext, String tenantId) {
         String scopeExecutionId = execution.getId();
-        LOG.debug("execute() called for scope '{}', hasToolResult={}, isActive={}, " +
-                        "revision='{}', thread={}",
-                scopeExecutionId,
-                orchestratorConfig.hasToolResult(),
-                execution.isActive(),
-                execution.getRevision(),
-                Thread.currentThread().getName());
+        LOG.debug("execute() called for scope '{}', hasToolResult={}, isActive={}, revision='{}', thread={}",
+                scopeExecutionId, orchestratorConfig.hasToolResult(), execution.isActive(),
+                execution.getRevision(), Thread.currentThread().getName());
 
-        LOG.debug("execution hierarchy: id='{}', parentId='{}', superExecutionId='{}', " +
-                        "isScope={}, isActive={}, activityId='{}'",
-                execution.getId(),
-                execution.getParentId(),
-                execution.getSuperExecutionId(),
-                execution.isScope(),
-                execution.isActive(),
-                execution.getActivityId());
+        LOG.debug("execution hierarchy: id='{}', parentId='{}', superExecutionId='{}', isScope={}, isActive={}, activityId='{}'",
+                execution.getId(), execution.getParentId(), execution.getSuperExecutionId(),
+                execution.isScope(), execution.isActive(), execution.getActivityId());
 
         RuntimeService runtimeService = execution.getProcessEngineServices().getRuntimeService();
-        RepositoryService repositoryService = execution.getProcessEngineServices().getRepositoryService();
+        RepositoryService repositoryService =
+                execution.getProcessEngineServices().getRepositoryService();
 
         if (!execution.isActive()) {
             LOG.debug("Scope execution '{}' is no longer active, skipping orchestration step",
@@ -140,7 +149,8 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
 
             boolean allCompleted =
                     stateManager.completeToolCall(runtimeService, scopeExecutionId, result.toolCallId());
-            LOG.debug("completeToolCall() for '{}' returned allCompleted={}", result.toolCallId(), allCompleted);
+            LOG.debug("completeToolCall() for '{}' returned allCompleted={}", result.toolCallId(),
+                    allCompleted);
 
             stateManager.appendToResultBuffer(runtimeService, scopeExecutionId, result);
 
@@ -149,7 +159,6 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                 return;
             }
             LOG.debug("All tools completed for scope '{}', proceeding to LLM", scopeExecutionId);
-            // All pending tools done — fall through to next LLM call
         }
 
         List<ToolResult> buffer = stateManager.loadToolResultBuffer(runtimeService, scopeExecutionId);
@@ -157,18 +166,18 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         history = appendToolResults(history, buffer);
         stateManager.clearToolResultBuffer(runtimeService, scopeExecutionId);
 
-        // First turn: history is empty and the mapper would send only system messages.
-        // Seed a user turn so the model actually engages the tools.
         if (history.isEmpty()) {
             history.add(ConversationEntry.user(INITIAL_USER_PROMPT));
         }
 
         AgentConfig agentConfig = agentConfigRegistry
-                .resolve(repositoryService, execution.getProcessDefinitionId(), execution.getActivityId())
+                .resolve(repositoryService, execution.getProcessDefinitionId(),
+                        execution.getActivityId())
                 .orElseThrow(() -> new IllegalStateException("No AgentConfig found for "
                         + execution.getProcessDefinitionId() + "/" + execution.getActivityId()));
         AgentToolCatalogue catalogue = toolCatalogueRegistry
-                .resolve(repositoryService, execution.getProcessDefinitionId(), execution.getActivityId())
+                .resolve(repositoryService, execution.getProcessDefinitionId(),
+                        execution.getActivityId())
                 .orElseThrow(() -> new IllegalStateException("No AgentToolCatalogue found for "
                         + execution.getProcessDefinitionId() + "/" + execution.getActivityId()));
 
@@ -177,32 +186,70 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
                     "Tool catalogue is empty for activity '{}' in process '{}', terminating execution '{}'",
                     execution.getActivityId(), execution.getProcessDefinitionId(),
                     scopeExecutionId);
-            AgentTerminationHandler.complete(runtimeService, scopeExecutionId);
+            endSubprocessObservability(execution, agentConfig, null);
+            agentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
 
-        // Fallback to empty spec if no context is declared — resolver will include all process
-        // variables
         AgentContextSpec contextSpec = contextSpecRegistry
-                .resolve(repositoryService, execution.getProcessDefinitionId(), execution.getActivityId())
+                .resolve(repositoryService, execution.getProcessDefinitionId(),
+                        execution.getActivityId())
                 .orElse(new AgentContextSpec(execution.getProcessDefinitionId(),
                         execution.getActivityId(), List.of()));
         ResolvedContext context = contextResolver.resolve(runtimeService, scopeExecutionId, contextSpec);
 
+        boolean isFirstTurn = stateManager.getLoopIndex(runtimeService, scopeExecutionId) == 0;
+        if (isFirstTurn) {
+            Instant startTime = ClockUtil.getCurrentTime().toInstant();
+            stateManager.recordStartTime(runtimeService, scopeExecutionId, startTime);
+            startSubprocessObservability(execution, agentConfig, context);
+        }
 
-        LlmResponse response =
-                llmService.call(agentConfig, catalogue, context, history);
-        LOG.debug("LLM response for scope '{}': toolCalls={}", scopeExecutionId, response.toolCalls());
+        int loopIndex = stateManager.incrementAndGetLoopIndex(runtimeService, scopeExecutionId);
+
+        String promptMessages = serializePromptMessages(execution, agentConfig, context, history);
+        otelTracing.startLlmCall(scopeExecutionId, loopIndex, agentConfig.provider(),
+                agentConfig.model(), promptMessages);
+
+        Instant llmCallStart = ClockUtil.getCurrentTime().toInstant();
+        LlmResponse response = llmService.call(agentConfig, catalogue, context, history);
+        long llmDurationMs =
+                Duration.between(llmCallStart, ClockUtil.getCurrentTime().toInstant()).toMillis();
+        LOG.debug("LLM response for scope '{}': toolCalls={}", scopeExecutionId,
+                response.toolCalls());
         stateManager.saveHistory(runtimeService, scopeExecutionId, response.updatedHistory());
+        stateManager.accumulateTokens(runtimeService, scopeExecutionId, response.promptTokens(),
+                response.completionTokens());
+
+        otelMetrics.recordLlmCall(agentConfig.provider(), agentConfig.model(),
+                response.promptTokens(), response.completionTokens(), llmDurationMs);
+        otelTracing.endLlmCall(scopeExecutionId, loopIndex, agentConfig.provider(),
+                agentConfig.model(), response.promptTokens(), response.completionTokens(),
+                response.assistantText());
 
         if (response.toolCalls().isEmpty()) {
-            LOG.debug("No tool calls returned, triggering termination for scope '{}'", scopeExecutionId);
-            // Complete the process if tool call is empty
-            AgentTerminationHandler.complete(runtimeService, scopeExecutionId);
+            LOG.debug("No tool calls returned, triggering termination for scope '{}'",
+                    scopeExecutionId);
+            endSubprocessObservability(execution, agentConfig, response.assistantText());
+            agentTerminationHandler.complete(runtimeService, scopeExecutionId);
             return;
         }
+
+        Instant toolRequestTime = ClockUtil.getCurrentTime().toInstant();
+        for (ToolCallRequest tc : response.toolCalls()) {
+            stateManager.recordToolRequestTime(runtimeService, scopeExecutionId, tc.toolCallId(),
+                    toolRequestTime);
+            if (contentCaptureProperties.isCaptureContent()) {
+                stateManager.recordToolCallArguments(runtimeService, scopeExecutionId,
+                        tc.toolCallId(), tc.arguments());
+            }
+            otelTracing.startToolCall(scopeExecutionId, execution.getActivityId(), tc.toolCallId(),
+                    tc.toolId(), null, tc.arguments());
+        }
+
         LOG.debug("Dispatching scope '{}': toolCalls='{}'", scopeExecutionId, response.toolCalls());
-        dispatch(runtimeService, scopeExecutionId, catalogue, response.toolCalls(), execution, commandContext);
+        dispatch(runtimeService, scopeExecutionId, catalogue, response.toolCalls(), execution,
+                commandContext);
     }
 
     @Override
@@ -215,21 +262,18 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         // No cleanup needed
     }
 
-    private void dispatch(RuntimeService runtimeService, String scopeExecutionId, AgentToolCatalogue catalogue,
-            List<ToolCallRequest> toolCalls, ExecutionEntity execution,
+    private void dispatch(RuntimeService runtimeService, String scopeExecutionId,
+            AgentToolCatalogue catalogue, List<ToolCallRequest> toolCalls, ExecutionEntity execution,
             CommandContext commandContext) {
         Set<String> pending = new HashSet<>();
 
         for (ToolCallRequest tc : toolCalls) {
             pending.add(tc.toolCallId());
-            LOG.debug("dispatch() scope='{}' registering toolCallId='{}'", scopeExecutionId, tc.toolCallId());
+            LOG.debug("dispatch() scope='{}' registering toolCallId='{}'", scopeExecutionId,
+                    tc.toolCallId());
             ToolInvocationResult result =
                     toolInvocationService.invoke(runtimeService, scopeExecutionId, catalogue, tc);
             if (!result.success()) {
-                // Synchronous failure — no BPMN activity will complete, so no listener will fire.
-                // Instantiate an equivalent completion job so the failure travels through the same
-                // tool-completion path as listener-driven results, keeping the pending set
-                // consistent.
                 ToolResult failure = ToolResult.error(tc.toolCallId(), result.errorMessage());
                 MessageEntity job = new MessageEntity();
                 job.setExecution(execution);
@@ -243,16 +287,94 @@ public class AgentOrchestrationJobHandler implements JobHandler<AgentOrchestrati
         stateManager.savePendingToolCalls(runtimeService, scopeExecutionId, pending);
     }
 
-
     private List<ConversationEntry> appendToolResults(List<ConversationEntry> history,
             List<ToolResult> results) {
         List<ConversationEntry> updated = new ArrayList<>(history);
         for (ToolResult result : results) {
-            Map<String, Object> resultContent =
-                    result.isError() ? Map.of("error", result.errorMessage())
-                            : Map.of("status", "ok");
+            Map<String, Object> resultContent;
+            if (result.isError()) {
+                resultContent = Map.of("error", result.errorMessage());
+            } else if (result.output() != null) {
+                resultContent = Map.of("output", result.output());
+            } else {
+                resultContent = Map.of("status", "ok");
+            }
             updated.add(ConversationEntry.tool(result.toolCallId(), resultContent));
         }
         return updated;
+    }
+
+    private void startSubprocessObservability(ExecutionEntity execution, AgentConfig agentConfig,
+            ResolvedContext context) {
+        String inputVariablesJson = null;
+        if (context != null && context.variables() != null && !context.variables().isEmpty()) {
+            try {
+                inputVariablesJson = MAPPER.writeValueAsString(context.variables());
+            } catch (JsonProcessingException e) {
+                LOG.warn("Failed to serialize input variables for subprocess '{}': {}",
+                        execution.getId(), e.getMessage());
+            }
+        }
+
+        otelTracing.startSubprocess(execution.getId(), execution.getActivityId(),
+                execution.getProcessInstanceId(), agentConfig.provider(), agentConfig.model(),
+                agentConfig.systemPrompt(), inputVariablesJson);
+    }
+
+    private void endSubprocessObservability(ExecutionEntity execution, AgentConfig agentConfig,
+            String finalOutput) {
+        String scopeExecutionId = execution.getId();
+        RuntimeService runtimeService = execution.getProcessEngineServices().getRuntimeService();
+        Instant startTime = stateManager.getStartTime(runtimeService, scopeExecutionId);
+        int iterationCount = stateManager.getLoopIndex(runtimeService, scopeExecutionId);
+        long totalPromptTokens = stateManager.getTotalPromptTokens(runtimeService, scopeExecutionId);
+        long totalCompletionTokens =
+                stateManager.getTotalCompletionTokens(runtimeService, scopeExecutionId);
+        Instant endTime = ClockUtil.getCurrentTime().toInstant();
+
+        stateManager.recordIterationCount(runtimeService, scopeExecutionId, iterationCount);
+
+        long toolCallCount = otelMetrics.recordSubprocess(scopeExecutionId,
+                execution.getActivityId(), agentConfig.provider(), agentConfig.model(),
+                iterationCount, startTime, endTime, totalPromptTokens, totalCompletionTokens);
+        otelTracing.endSubprocess(scopeExecutionId, totalPromptTokens, totalCompletionTokens,
+                iterationCount, toolCallCount, finalOutput);
+    }
+
+    private String serializePromptMessages(ExecutionEntity execution, AgentConfig agentConfig,
+            ResolvedContext context, List<ConversationEntry> history) {
+        List<ConversationEntry> fullPrompt = buildFullPromptForLogging(agentConfig, context, history);
+        if (fullPrompt.isEmpty()) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(fullPrompt);
+        } catch (JsonProcessingException e) {
+            LOG.warn("Failed to serialize prompt messages for execution '{}': {}",
+                    execution.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private List<ConversationEntry> buildFullPromptForLogging(AgentConfig agentConfig,
+            ResolvedContext context, List<ConversationEntry> history) {
+        List<ConversationEntry> full = new ArrayList<>();
+        if (agentConfig.systemPrompt() != null && !agentConfig.systemPrompt().isBlank()) {
+            full.add(ConversationEntry.system(agentConfig.systemPrompt()));
+        }
+        if (context != null && context.variables() != null && !context.variables().isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            context.variables().forEach((name, value) -> {
+                if (!sb.isEmpty()) {
+                    sb.append('\n');
+                }
+                sb.append(name).append(" = ").append(value != null ? value.toString() : "null");
+            });
+            full.add(ConversationEntry.system(sb.toString()));
+        }
+        if (history != null) {
+            full.addAll(history);
+        }
+        return full;
     }
 }

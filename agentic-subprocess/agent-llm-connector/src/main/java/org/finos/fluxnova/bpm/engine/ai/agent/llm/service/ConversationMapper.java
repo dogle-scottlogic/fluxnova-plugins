@@ -5,7 +5,10 @@ import org.finos.fluxnova.bpm.engine.ai.agent.model.AgentConfig;
 import org.finos.fluxnova.bpm.engine.shared.model.ConversationEntry;
 import org.finos.fluxnova.bpm.engine.shared.model.LlmResponse;
 import org.finos.fluxnova.bpm.engine.shared.model.ToolCallRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import java.util.ArrayList;
@@ -18,6 +21,8 @@ import java.util.stream.Collectors;
  * do not leak outside this package.
  */
 class ConversationMapper {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ConversationMapper.class);
 
     /**
      * Builds the Spring AI message list for the next ChatClient call.
@@ -69,7 +74,7 @@ class ConversationMapper {
                                     tc.toolCallId(),
                                     "function",
                                     tc.toolId(),
-                                    "{}"))
+                                    tc.arguments() != null ? tc.arguments() : "{}"))
                             .collect(Collectors.toList()))
                     .build();
             case TOOL -> ToolResponseMessage.builder()
@@ -93,14 +98,26 @@ class ConversationMapper {
         List<AssistantMessage.ToolCall> springCalls = message.getToolCalls();
 
         List<ToolCallRequest> toolCalls = springCalls.stream()
-                .map(tc -> new ToolCallRequest(tc.id(), tc.name()))
+                .map(tc -> new ToolCallRequest(tc.id(), tc.name(), tc.arguments()))
                 .collect(Collectors.toList());
 
         List<ConversationEntry> updated = new ArrayList<>(
                 priorHistory == null ? List.of() : priorHistory);
         updated.add(ConversationEntry.assistant(text, toolCalls));
 
-        return new LlmResponse(text, toolCalls, updated);
+        long promptTokens = 0;
+        long completionTokens = 0;
+        try {
+            Usage usage = response.getMetadata().getUsage();
+            if (usage != null) {
+                promptTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+                completionTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+            }
+        } catch (Exception e) {
+            LOG.debug("Token usage not available from this provider: {}", e.getMessage());
+        }
+
+        return new LlmResponse(text, toolCalls, updated, promptTokens, completionTokens);
     }
 
     private static String formatContext(ResolvedContext context) {

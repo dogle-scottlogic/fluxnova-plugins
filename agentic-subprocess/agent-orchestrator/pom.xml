@@ -36,7 +36,17 @@
         </dependency>
         <dependency>
             <groupId>org.finos.fluxnova.bpm</groupId>
+            <artifactId>fluxnova-engine-plugins-ai-agent-otel</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.finos.fluxnova.bpm</groupId>
             <artifactId>fluxnova-engine</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.finos.fluxnova.bpm</groupId>
+            <artifactId>fluxnova-engine-plugin-otel</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>

@@ -11,8 +11,10 @@ import org.finos.fluxnova.bpm.engine.shared.model.LlmResponse;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -66,7 +68,22 @@ public class SpringAiLlmService implements LlmService {
 
         List<ConversationEntry> history = conversationHistory == null ? List.of() : conversationHistory;
         List<ToolCallback> toolCallbacks = catalogue == null ? List.of() : toolSchemaConverter.convert(catalogue);
-        List<Message> messages = conversationMapper.toSpringAi(agentConfig, context, history);
+        List<Message> allMessages = conversationMapper.toSpringAi(agentConfig, context, history);
+
+        // Separate system messages from conversation messages and deliver the system content via
+        // spec.system(). Embedding SystemMessage objects in the messages list can be silently
+        // dropped by some providers (e.g. Ollama) when the conversation contains
+        // ToolResponseMessage entries, causing context collapse after the first tool call.
+        // Using the canonical ChatClient system API guarantees the system prompt is sent on
+        // every loop iteration regardless of message list composition.
+        String systemContent = allMessages.stream()
+                .filter(m -> m.getMessageType() == MessageType.SYSTEM)
+                .map(Message::getText)
+                .filter(t -> t != null && !t.isBlank())
+                .collect(Collectors.joining("\n\n"));
+        List<Message> conversationMessages = allMessages.stream()
+                .filter(m -> m.getMessageType() != MessageType.SYSTEM)
+                .collect(Collectors.toList());
 
         // Build a ChatClient whose tool advisor never executes tools internally: the eligibility
         // checker always returns false, so the model's tool-call response is returned to us and the
@@ -84,7 +101,13 @@ public class SpringAiLlmService implements LlmService {
                 .defaultAdvisors(nonExecutingToolAdvisor)
                 .build();
 
-        ChatClient.ChatClientRequestSpec spec = client.prompt().messages(messages);
+        ChatClient.ChatClientRequestSpec spec = client.prompt().messages(conversationMessages);
+        if (!systemContent.isBlank()) {
+            spec = spec.system(systemContent);
+        }
+        if (agentConfig.model() != null && !agentConfig.model().isBlank()) {
+            spec = spec.options(ChatOptions.builder().model(agentConfig.model()));
+        }
         if (!toolCallbacks.isEmpty()) {
             spec = spec.toolCallbacks(toolCallbacks);
         }
