@@ -4,6 +4,7 @@ import org.finos.fluxnova.bpm.engine.RuntimeService;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentContextSpecRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.registry.AgentToolCatalogueRegistry;
 import org.finos.fluxnova.bpm.engine.ai.agent.discovery.runtime.AgentContextResolver;
+import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelContentCaptureProperties;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelMetrics;
 import org.finos.fluxnova.bpm.engine.ai.agent.otel.AgentOtelTracing;
 import org.finos.fluxnova.bpm.engine.ai.agent.llm.service.LlmService;
@@ -73,6 +74,11 @@ class AgentOrchestratorAutoConfigurationTest {
         AgentOtelTracing agentOtelTracing() {
             return mock(AgentOtelTracing.class);
         }
+
+        @Bean
+        AgentOtelContentCaptureProperties agentOtelContentCaptureProperties() {
+            return new AgentOtelContentCaptureProperties();
+        }
     }
 
     @Configuration
@@ -120,6 +126,11 @@ class AgentOrchestratorAutoConfigurationTest {
         @Bean
         AgentOtelTracing agentOtelTracing() {
             return mock(AgentOtelTracing.class);
+        }
+
+        @Bean
+        AgentOtelContentCaptureProperties agentOtelContentCaptureProperties() {
+            return new AgentOtelContentCaptureProperties();
         }
 
         @Bean
