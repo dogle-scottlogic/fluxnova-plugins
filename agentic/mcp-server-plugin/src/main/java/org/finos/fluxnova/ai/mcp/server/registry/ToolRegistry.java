@@ -2,6 +2,8 @@ package org.finos.fluxnova.ai.mcp.server.registry;
 
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -147,25 +149,20 @@ public class ToolRegistry {
     /**
      * Builds an MCP Tool from a ToolConfig.
      * Uses the raw JSON schema if provided, otherwise builds one from parameter specs.
+     *
+     * <p>Uses the builder API for compatibility with MCP SDK 2.0.0 where
+     * Tool.inputSchema is Map&lt;String, Object> but the builder accepts JsonSchema.</p>
      */
     private Tool buildTool(ToolConfig config) {
         JsonSchema schema = config.rawSchema() != null
                 ? config.rawSchema()
                 : buildJsonSchema(config.parameters());
 
-        // Convert JsonSchema to Map for the Tool constructor
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schemaMap = objectMapper.convertValue(schema, Map.class);
-
-        return new Tool(
-                config.name(),
-                null,  // href - not used
-                config.description(),
-                schemaMap,
-                null,  // annotations - not used
-                null,  // _meta - not used
-                null   // additionalProperties - not used
-        );
+        return Tool.builder()
+                .name(config.name())
+                .description(config.description())
+                .inputSchema(schema)
+                .build();
     }
 
     /**
@@ -190,7 +187,7 @@ public class ToolRegistry {
         parameters.forEach((name, spec) -> {
             Map<String, Object> property = new HashMap<>();
             String type = spec.type();
-            
+
             // Convert BPMN semantic types to valid JSON Schema types
             switch (type) {
                 case "Date":
@@ -218,7 +215,7 @@ public class ToolRegistry {
                     // String, Text, or any other type defaults to string
                     property.put("type", "string");
             }
-            
+
             property.put("description", "Parameter: " + name);
             properties.put(name, property);
 
@@ -239,11 +236,14 @@ public class ToolRegistry {
 
     /**
      * Builds a tool specification with the execution handler.
+     *
+     * <p>Uses the builder API for compatibility with MCP SDK 2.0.0 where
+     * SyncToolSpecification is now a 2-arg record (tool, callHandler).</p>
      */
     private SyncToolSpecification buildToolSpecification(Tool tool, ToolConfig config) {
-        return new SyncToolSpecification(
-                tool,
-                (exchange, callToolRequest) -> {
+        return SyncToolSpecification.builder()
+                .tool(tool)
+                .callHandler((McpSyncServerExchange exchange, CallToolRequest callToolRequest) -> {
                     try {
                         LOG.debug("MCP - Executing tool '{}' with request: {}", config.name(), callToolRequest);
 
@@ -251,7 +251,7 @@ public class ToolRegistry {
                                 ? callToolRequest.arguments()
                                 : Map.of();
                         Object result = config.handler().execute(args);
-
+                        
                         String resultText = formatResult(result);
 
                         LOG.debug("MCP - Tool '{}' executed successfully", config.name());
@@ -271,8 +271,8 @@ public class ToolRegistry {
                                 null     // additionalProperties
                         );
                     }
-                }
-        );
+                })
+                .build();
     }
 
     /**

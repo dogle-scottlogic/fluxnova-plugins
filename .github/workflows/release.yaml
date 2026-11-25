@@ -1,14 +1,32 @@
 # Workflow: Mono-repo Release - Publish selected project to Maven Central
-# Purpose: Release and publish Maven artifacts for a specific project to Sonatype OSSRH
-# Triggers:
-#   - Manual dispatch: select project + dry-run option
-# Branch requirements:
-#   - Must be on a release/* or hotfix/* branch
-#   - release/* → major version increment
-#   - hotfix/* → minor version increment
-# Prerequisites:
-#   - Project pom.xml must be on a *-SNAPSHOT version
-#   - User must be on a valid release or hotfix branch
+#
+# Purpose
+# - Release and publish Maven artifacts for one selected project from this monorepo.
+# - Supports dry-run planning and full Maven release execution.
+#
+# Trigger
+# - Manual only: workflow_dispatch
+# - Inputs:
+#   - project: project key to release
+#   - dry-run: true/false (default true)
+#
+# Branch Rules (current)
+# - release/*  -> treated as release branch (major next-dev bump logic)
+# - hotfix/*   -> treated as hotfix branch (minor next-dev bump logic)
+#
+# Release Versioning Behavior
+# - Validates selected project version is *-SNAPSHOT.
+# - Computes:
+#   - release-version = current version without -SNAPSHOT
+#   - development-version:
+#       release/* -> (major+1).0.0-SNAPSHOT
+#       hotfix/*  -> major.(minor+1).0-SNAPSHOT
+# - Tag format: <projectKey>-v<releaseVersion>
+# - release:prepare + release:perform execute against selected project pom only.
+#
+# Notes
+# - Workflow reads project metadata from `.github/config/projects.yaml`.
+# - Publishes via Sonatype Central Portal. Manually promote the validated deployment in Sonatype Central.
 
 name: "Release - Mono-repo publish to Maven Central"
 
@@ -100,29 +118,35 @@ jobs:
           PROJECT="${{ inputs.project }}"
           MAP_FILE=".github/config/projects.yaml"
           
+          echo "Resolving project metadata for '$PROJECT' from mapping file '$MAP_FILE'"
+          
           if [[ ! -f "$MAP_FILE" ]]; then
             echo "ERROR: Project mapping file '$MAP_FILE' not found"
             exit 1
           fi
           
+          echo "Mapping file found : $MAP_FILE"
+          
           #Extract Key
           PROJECT_KEY=$(yq -r ".projects.\"$PROJECT\".tagKey // \"\"" "$MAP_FILE" 2>/dev/null || echo "failed")
           
-          if [[ -z "$PROJECT_KEY" || "$PROJECT_KEY" == "null" || "$PROJECT_KEY" == "failed"]]; then
+          if [[ -z "$PROJECT_KEY" || "$PROJECT_KEY" == "null" || "$PROJECT_KEY" == "failed" ]]; then
             echo "ERROR: Unknown project '$PROJECT' or missing tagKey in $MAP_FILE"
             exit 1
           fi
           
+          echo "Resolved project key: $PROJECT_KEY"
           echo "project-key=$PROJECT_KEY" >> $GITHUB_OUTPUT
           
           #Extract Path
           PROJECT_PATH=$(yq -r ".projects.\"$PROJECT\".path // \"\"" "$MAP_FILE" 2>/dev/null || echo "failed")
           
-          if [[ -z "$PROJECT_PATH" || "$PROJECT_PATH" == "null" || "$PROJECT_PATH" == "failed"] ]]; then
+          if [[ -z "$PROJECT_PATH" || "$PROJECT_PATH" == "null" || "$PROJECT_PATH" == "failed" ]]; then
             echo "ERROR: Unknown project '$PROJECT' or missing path in $MAP_FILE"
             exit 1
           fi
           
+          echo "Resolved project path: $PROJECT_PATH"
           echo "project-path=$PROJECT_PATH" >> "$GITHUB_OUTPUT"
 
   publish-central:
@@ -147,7 +171,7 @@ jobs:
         with:
           java-version: 21
           distribution: 'temurin'
-          server-id: ossrh
+          server-id: central
           server-username: CI_DEPLOY_USERNAME
           server-password: CI_DEPLOY_PASSWORD
           gpg-private-key: ${{ secrets.CI_GPG_PRIVATE_KEY }}
@@ -257,7 +281,12 @@ jobs:
       - name: Configure GitHub authentication for Maven Release Plugin
         if: ${{ !inputs.dry-run }}
         run: |
-          git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          if [[ -n "${GH_TOKEN}" ]]; then
+            echo "Configuring GitHub authentication for Maven Release Plugin"
+            git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          else
+            echo "GH_TOKEN is not set. Falling back to default auth."
+          fi
 
       - name: Prepare release
         if: ${{ !inputs.dry-run }}
@@ -266,15 +295,12 @@ jobs:
           mvn -B \
             -f ${{ needs.validate-branch.outputs.project-path }}/pom.xml \
             -DautoVersionSubmodules=true \
-            -DcommitByProject=false \
             -DpreparationGoals=clean \
             release:prepare \
             -DreleaseVersion=${{ env.RELEASE_VERSION }} \
             -DdevelopmentVersion=${{ env.DEVELOPMENT_VERSION }} \
             -Dtag=${{ env.TAG }} \
-            -DignoreSnapshots=true \
-            -DinteractiveMode=false \
-            -s ./settings.xml
+            -DinteractiveMode=false
 
       - name: Perform release
         if: ${{ !inputs.dry-run }}
@@ -283,13 +309,11 @@ jobs:
           mvn -B \
             -f ${{ needs.validate-branch.outputs.project-path }}/pom.xml \
             -DautoVersionSubmodules=true \
-            -DcommitByProject=true \
             -DinteractiveMode=false \
             -DreleaseProfiles=release \
-            -Dgoals='deploy org.sonatype.plugins:nexus-staging-maven-plugin:1.6.13:close' \
-            -Darguments='-DautoVersionSubmodules=true -DcommitByProject=true -DreleasePerform=true -DskipTests -DskipITs' \
-            release:perform \
-            -s ./settings.xml
+            -Dgoals='deploy' \
+            -Darguments='-DautoVersionSubmodules=true -DreleasePerform=true -DskipTests -DskipITs -Ddoclint=none' \
+            release:perform
 
       - name: Print release summary
         if: ${{ !inputs.dry-run }}
@@ -300,7 +324,7 @@ jobs:
           echo "Tag      : ${{ env.TAG }}"
           echo "Next Dev : ${{ env.DEVELOPMENT_VERSION }}"
           echo ""
-          echo "  Artifact published to Sonatype OSSRH"
+          echo "  Artifact published to Maven Central"
           echo "  Tag '${{ env.TAG }}' created"
           echo "  Development version updated to ${{ env.DEVELOPMENT_VERSION }}"
 

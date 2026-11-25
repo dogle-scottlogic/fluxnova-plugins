@@ -56,8 +56,7 @@ jobs:
       - name: Download deps and plugins
         run: |
           mvn de.qaware.maven:go-offline-maven-plugin:resolve-dependencies \
-            -f ${{ steps.project-meta.outputs.project-path }}/pom.xml \
-            -s ./settings.xml
+            -f ${{ steps.project-meta.outputs.project-path }}/pom.xml
 
       - name: Build
         uses: ./.github/actions/build-deploy

@@ -25,7 +25,6 @@ import java.util.Set;
  * <p>
  * The listener delegates to:
  * <ul>
- *   <li>{@link BpmnStartEventToolExtractor} - to extract MCP metadata from BPMN XML</li>
  *   <li>{@link ToolFactory} - to create and register the tool with the {@code ToolRegistry}</li>
  * </ul>
  * </p>
@@ -92,7 +91,6 @@ public class McpParseListener extends AbstractBpmnParseListener {
                     "MCP - Deployment validation failed: duplicate return variable name '%s' " +
                     "in start event '%s' of process '%s'. Each return variable must have a unique name.",
                     returnVar.name(), startEventId, toolDefinition.processKey());
-                LOG.error(errorMsg);
                 throw new RuntimeException(errorMsg);
             }
             seenNames.add(returnVar.name());

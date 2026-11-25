@@ -91,11 +91,18 @@ spring.ai.mcp.server.type=sync
           <mcp:parameter paramName="customerName" paramType="string"/>
           <mcp:parameter paramName="customerId"   paramType="string"/>
         </mcp:parameters>
+        <mcp:returnVariables>
+            <mcp:returnVariable paramName="myResponseProcessVariable1" paramType="String" />
+            <mcp:returnVariable paramName="myResponseProcessVariable2" paramType="String" />
+        </mcp:returnVariables>
+      </extensionElements>
       </bpmn:extensionElements>
     </bpmn:startEvent>
   </bpmn:process>
 </bpmn:definitions>
 ```
+See [MCP Process Start Event](mcp-process-start-event/README.md)
+for full syntax documentation
 
 #### 4. Compile and build
 

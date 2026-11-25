@@ -8,10 +8,12 @@ A Fluxnova `ProcessEnginePlugin` that scans BPMN processes for MCP-annotated sta
 - Runs a startup scanner that registers tools for processes that were **already deployed** before the application started
 - Translates BPMN start event metadata into `ToolConfig` objects and registers them in the `ToolRegistry`
 - Starts a Fluxnova process instance when an MCP client invokes a tool
+- Returns specified return parameters available up to the first Asynch before/after or natural commit point (like a user task or timer)
 
 ## Prerequisites
 
-`mcp-server-plugin` must be on the classpath (and its `ToolRegistry` bean present) for this plugin to activate.
+- `mcp-server-plugin` must be on the classpath (and its `ToolRegistry` bean present) for this plugin to activate.
+- **Jackson (`jackson-databind`)** is required at runtime for variable serialization. In Spring Boot deployments this is automatically available. For non-Spring-Boot Fluxnova deployments, you must add `jackson-databind` to the runtime classpath explicitly.
 
 ## Installation
 
@@ -79,12 +81,36 @@ Declare input parameters inside `extensionElements`:
   </mcp:parameters>
 </extensionElements>
 ```
+Supported input `paramType` values: `string`, `number`, `boolean`, `object`, `array`
 
-Supported `paramType` values: `string`, `number`, `boolean`, `object`, `array`
+Declare any optional output parameters inside `extensionElements`:
+```xml
+<extensionElements>
+  <mcp:returnVariables>
+    <mcp:returnVariable paramName="myResponseProcessVariable1" paramType="string" />
+  </mcp:returnVariables>
+</extensionElements>
+```
+
+- Note that `paramName` is case sensitive.
+- The `paramType` attribute on return variables is **metadata only** — it documents the expected type for consumers (e.g., LLM clients) but is not enforced at runtime. The actual serialization is determined by the Java type of the process variable (see supported types below).
+- Any variable specified that is available in process at commit point (Asynch before/after or natural commit point like a user task or timer) will be returned at response.
+- It is the responsibility of the process designer to ensure that the response variables are suitable for LLM consumption as well as reasonable size limits.
+
+Supported output `paramType` values:
+
+- `string`:  String values
+- `number`: Integer, Long, Date (serialized as epoch milliseconds), and other numeric types if serializable by Spin
+- `boolean`: Boolean values
+- `object`: Map<String,Object>, Spin JSON objects, and Java POJOs serializable by Spin
+- `array`: JSON arrays, List/Collection types serializable by Spin
+
+
+
 
 ## Usage Examples
 
-### Example 1 — Simple process trigger with business key
+### Example 1 — Simple process trigger with business key with output parameters
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -102,6 +128,10 @@ Supported `paramType` values: `string`, `number`, `boolean`, `object`, `array`
           <mcp:parameter paramName="amount"      paramType="number"/>
           <mcp:parameter paramName="description" paramType="string"/>
         </mcp:parameters>
+        <mcp:returnVariables>
+          <mcp:returnVariable paramName="myResponseProcessVariable1" paramType="string" />
+          <mcp:returnVariable paramName="myResponseProcessVariable2" paramType="string" />
+        </mcp:returnVariables>
       </extensionElements>
     </startEvent>
     <!-- ... rest of process ... -->

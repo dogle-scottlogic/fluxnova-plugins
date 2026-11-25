@@ -4,53 +4,82 @@
 
     <groupId>org.finos.fluxnova.bpm</groupId>
     <artifactId>fluxnova-plugins</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.0</version> <!-- Do not update this version -->
     <packaging>pom</packaging>
 
     <name>Fluxnova Platform - engine plugins</name>
 
+    <!--
+        ╔══════════════════════════════════════════════════════════════════╗
+        ║                  DEVELOPER NOTICE - READ BEFORE EDITING          ║
+        ╠══════════════════════════════════════════════════════════════════╣
+        ║                                                                  ║
+        ║  This POM is the ROOT AGGREGATOR / BUILD PARENT only.            ║
+        ║                                                                  ║
+        ║  - It is NOT published to Maven Central or any artifact repo.    ║
+        ║  - Its version MUST NOT be changed during module releases.       ║
+        ║    (Only individual sub-project POMs are versioned/released.)    ║
+        ║                                                                  ║
+        ║  - All shared dependency versions and plugin versions must be    ║
+        ║    declared HERE in <dependencyManagement> / <pluginManagement>  ║
+        ║    and inherited by sub-projects.                                ║
+        ║                                                                  ║
+        ║  - Do NOT add module-specific dependencies directly here.        ║
+        ║    Add them in the relevant sub-project's own pom.xml.           ║
+        ║                                                                  ║
+        ║  - Override the dependency versions in the sub-project POMs,     ║
+        ║    if necessary.                                                 ║
+        ║                                                                  ║
+        ╚══════════════════════════════════════════════════════════════════╝
+    -->
+
     <properties>
-        <fluxnova.version>3.0.0</fluxnova.version>
+        <!-- Dependency Versions -->
+        <fluxnova.version>3.1.1</fluxnova.version>
         <java.version>21</java.version>
+        <spring-ai.version>2.0.0</spring-ai.version>
+        <spring-boot.version>4.0.7</spring-boot.version>
+        <slf4j.version>2.0.9</slf4j.version>
+        <json-schema-validator.version>3.0.0</json-schema-validator.version>
+        <junit.version>5.10.1</junit.version>
+
         <skipTests>false</skipTests>
         <skipITs>false</skipITs>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Dependency Versions -->
-        <spring-boot.version>4.0.7</spring-boot.version>
-        <slf4j.version>2.0.9</slf4j.version>
-        <json-schema-validator.version>3.0.0</json-schema-validator.version>
-        <junit.version>5.10.1</junit.version>
+
 
         <!-- properties required for publishing to maven central-->
         <plugin.version.gpg>3.2.7</plugin.version.gpg>
         <plugin.version.release>3.3.1</plugin.version.release>
         <plugin.version.javadoc>3.8.0</plugin.version.javadoc>
         <plugin.version.source>3.3.1</plugin.version.source>
-        <gpg.executable>gpg</gpg.executable>
-        <release.goals>deploy org.sonatype.plugins:nexus-staging-maven-plugin:1.6.13:close</release.goals>
-        <!--    <release.goals>install org.sonatype.central:central-publishing-maven-plugin:0.9.0:publish</release.goals>-->
-        <plugin.version.publish>0.9.0</plugin.version.publish>
+        <release.goals>deploy</release.goals>
+        <plugin.version.central-publishing>0.11.0</plugin.version.central-publishing>
         <plugin.version.deploy>3.1.4</plugin.version.deploy>
-        <publish.server.id>ossrh</publish.server.id>
+        <publish.server.id>central</publish.server.id>
         <skip.source.attach>false</skip.source.attach>
+        <gpg.executable>gpg</gpg.executable>
+        <gpg.passphrase>${env.CI_GPG_PASSPHRASE}</gpg.passphrase>
 
         <!-- Plugin versions -->
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>3.5.5</maven-failsafe-plugin.version>
         <flatten-maven-plugin.version>1.5.0</flatten-maven-plugin.version>
-        <spring-ai.version>2.0.0</spring-ai.version>
 
         <!--
             The OTEL engine plugin (org.finos.fluxnova.bpm:fluxnova-engine-plugin-otel) is not
-            yet part of the fluxnova-bom release train, so it is pinned here explicitly rather
-            than relying on the imported BOM. Update this once it ships as part of a matching
-            fluxnova.version release.
+            part of the upstream fluxnova-bom release train; it is built from the
+            dogle-scottlogic/fluxnova-bpm-platform fork and installed to the local Maven
+            repository, so it is pinned here explicitly rather than relying on the imported BOM.
+            Keep it in step with the engine fork's project version.
         -->
-        <fluxnova-otel-plugin.version>3.1.0-SNAPSHOT</fluxnova-otel-plugin.version>
+        <fluxnova-otel-plugin.version>3.1.1</fluxnova-otel-plugin.version>
     </properties>
+
     <dependencyManagement>
         <dependencies>
             <!-- Import Fluxnova BOM for version alignment -->
@@ -113,11 +142,12 @@
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
                     <artifactId>central-publishing-maven-plugin</artifactId>
-                    <version>${plugin.version.publish}</version>
+                    <version>${plugin.version.central-publishing}</version>
                     <extensions>true</extensions>
                     <configuration>
                         <publishingServerId>${publish.server.id}</publishingServerId>
                         <autoPublish>false</autoPublish>
+                        <waitUntil>validated</waitUntil>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -136,8 +166,12 @@
                     <version>${plugin.version.gpg}</version>
                     <configuration>
                         <useAgent>false</useAgent>
+                        <passphrase>${env.CI_GPG_PASSPHRASE}</passphrase>
                         <gpgArguments>
                             <arg>--digest-algo=SHA512</arg>
+                            <arg>--no-tty</arg>
+                            <arg>--pinentry-mode</arg>
+                            <arg>loopback</arg>
                         </gpgArguments>
                     </configuration>
                 </plugin>
@@ -165,7 +199,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <version>3.5.5</version>
+                    <version>${maven-failsafe-plugin.version}</version>
                     <configuration>
                         <skipITs>${skipITs}</skipITs>
                         <includes>
@@ -234,8 +268,8 @@
             </snapshots>
         </repository>
         <repository>
-            <id>ossrh-snapshots</id>
-            <name>Sonatype OSSRH Snapshots</name>
+            <id>central-snapshots</id>
+            <name>Sonatype central Snapshots</name>
             <url>https://central.sonatype.com/repository/maven-snapshots/</url>
             <releases>
                 <enabled>false</enabled>
@@ -248,15 +282,10 @@
 
     <distributionManagement>
         <snapshotRepository>
-            <id>ossrh</id>
+            <id>central</id>
             <name>Central Portal Snapshots</name>
             <url>https://central.sonatype.com/repository/maven-snapshots/</url>
         </snapshotRepository>
-        <repository>
-            <id>ossrh</id>
-            <name>OSSRH Staging</name>
-            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
     </distributionManagement>
 
     <profiles>
@@ -282,6 +311,10 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <version>${plugin.version.javadoc}</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                        </configuration>
                         <executions>
                             <execution>
                                 <id>attach-javadocs</id>
@@ -307,6 +340,10 @@
                                 </goals>
                             </execution>
                         </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
                     </plugin>
                 </plugins>
             </build>
@@ -341,10 +378,12 @@
         <url>https://github.com/orgs/finos/projects/116</url>
     </issueManagement>
 
-    <scm>
-        <connection>scm:git:https://github.com/finos/finos-fluxnova-plugins.git</connection>
-        <developerConnection>scm:git:https://github.com/finos/finos-fluxnova-plugins.git</developerConnection>
-        <url>https://github.com/finos/finos-fluxnova-plugins</url>
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/finos/fluxnova-plugins.git</connection>
+        <developerConnection>scm:git:https://github.com/finos/fluxnova-plugins.git</developerConnection>
+        <url>https://github.com/finos/fluxnova-plugins</url>
         <tag>HEAD</tag>
     </scm>
 </project>
